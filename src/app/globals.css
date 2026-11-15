@@ -301,3 +301,5 @@ html:has(.site-one), html:has(.site-one) body { background: #FFFFFF; }
 .live-ping { transform-box: fill-box; transform-origin: center; animation: live-ping 1.8s ease-out infinite; }
 @keyframes live-ping { from { transform: scale(.6); opacity: .5; } to { transform: scale(1.8); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .hero-mark, .live-ping { animation: none; } }
+/* No site, botões sem sombra colorida (o fundo é branco e chapado). */
+.site-one .btn-primary, .site-one .btn-primary:not(:disabled):hover { box-shadow: none; }

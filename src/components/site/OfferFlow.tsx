@@ -2,16 +2,18 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useInView, useReducedMotion } from "motion/react";
 import { Icon } from "@/components/Icon";
+import { PhoneFrame } from "./PhoneMock";
 
 /**
- * Para motoristas: o caminho de uma corrida, em ciclo. A oferta chega com o ganho já aberto, é aceita,
- * o trajeto avança e o valor entra no ganho do dia. Valores ilustrativos.
- * Só anima enquanto está na tela; com "reduzir movimento", fica parada na oferta.
+ * Para motoristas, no mesmo celular claro do hero: a oferta chega com o ganho já aberto, é aceita,
+ * o carro faz a corrida no mapa e o valor entra no ganho do dia. Ciclo de 12,6 s, só enquanto aparece na tela;
+ * com "reduzir movimento", fica parado na oferta. Valores ilustrativos.
  */
 const GROSS = 2500, FEE = 375, NET = GROSS - FEE;
 const DAY = [3400, 5200, 2800, 6100, 4300]; // corridas anteriores do dia, em centavos
-const STEPS = 4;
-const STEP_MS = [3200, 1600, 3000, 3400];
+const OFFER = 3.2, ACCEPTED = 4.8, TRIP = 8.8, CYCLE = 12.6; // limites das etapas, em segundos
+const ROUTE = "M 196 455 C 250 410, 150 330, 210 350 S 150 230, 120 170 S 40 160, 40 70";
+const TRIP_MIN = 14;
 
 const brl = (c: number) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const EASE = [.2, .8, .2, 1] as const;
@@ -19,87 +21,132 @@ const EASE = [.2, .8, .2, 1] as const;
 export function OfferFlow() {
   const reduce = useReducedMotion();
   const host = useRef<HTMLDivElement>(null);
-  const visible = useInView(host, { amount: .35 });
-  const [step, setStep] = useState(0);
+  const visible = useInView(host, { amount: .3 });
+  const [t, setT] = useState(0);
 
   useEffect(() => {
     if (reduce || !visible) return;
-    const t = setTimeout(() => setStep((s) => (s + 1) % STEPS), STEP_MS[step]);
-    return () => clearTimeout(t);
-  }, [step, visible, reduce]);
+    const id = setInterval(() => setT((x) => (x + .25) % CYCLE), 250);
+    return () => clearInterval(id);
+  }, [reduce, visible]);
 
-  const done = step === 3;
-  const total = DAY.reduce((a, b) => a + b, 0) + (done ? NET : 0);
+  const step = t < OFFER ? 0 : t < ACCEPTED ? 1 : t < TRIP ? 2 : 3;
+  const progress = step === 2 ? (t - ACCEPTED) / (TRIP - ACCEPTED) : step === 3 ? 1 : 0;
+  const minutes = Math.max(1, Math.ceil(TRIP_MIN * (1 - progress)));
+  const total = DAY.reduce((a, b) => a + b, 0) + (step === 3 ? NET : 0);
   const max = Math.max(...DAY, NET);
 
+  // Posição e direção do carro no trajeto.
+  const route = useRef<SVGPathElement>(null);
+  const [car, setCar] = useState({ x: 196, y: 455, a: -90 });
+  useEffect(() => {
+    const el = route.current;
+    if (!el) return;
+    const len = el.getTotalLength();
+    const at = Math.min(len - 1, progress * len);
+    const a = el.getPointAtLength(at), b = el.getPointAtLength(Math.min(len, at + 1));
+    setCar({ x: a.x, y: a.y, a: (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI });
+  }, [progress]);
+
+  const sheet = "absolute inset-x-0 bottom-0 z-10 rounded-t-[26px] bg-white px-4 pt-3 pb-5 text-[#02060E] shadow-[0_-8px_24px_-16px_rgb(2_6_14/.35)]";
+  const pop = { initial: { opacity: 0, y: 24 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: 24 }, transition: { duration: .4, ease: EASE } };
+
   return (
-    <div ref={host} className="relative grid h-full place-items-center p-5 sm:p-8">
+    <div ref={host} className="relative mx-auto grid w-full max-w-[460px] place-items-center py-4">
+      {/* A órbita do símbolo da Orbi em volta do celular */}
+      <div aria-hidden="true" className="absolute top-1/2 left-1/2 aspect-square w-[min(440px,96%)] -translate-x-1/2 -translate-y-1/2">
+        <motion.div className="absolute inset-0 rounded-full border-2 border-[#0356C5]/25" animate={reduce ? undefined : { rotate: 360 }} transition={{ duration: 40, repeat: Infinity, ease: "linear" }}>
+          <span className="absolute -top-2 left-1/2 size-4 -translate-x-1/2 rounded-full bg-[#0356C5]" />
+        </motion.div>
+      </div>
 
-      <div className="relative w-full max-w-[380px]">
+      <PhoneFrame tone="light" className="relative">
+        <svg viewBox="0 0 260 570" className="absolute inset-0 size-full" aria-hidden="true">
+          <rect width="260" height="570" fill="#EEF2F6" />
+          <path d="M150 380 C 200 370, 250 400, 260 440 L260 570 L120 570 C 110 500, 120 420, 150 380 Z" fill="#DDEFE3" />
+          <path d="M-10 520 C 60 500, 120 540, 270 505" fill="none" stroke="#CFE6FA" strokeWidth="16" />
+          <g fill="none" stroke="#FFFFFF" strokeLinecap="round">
+            <path d="M40 0 V 600 M150 0 V 600 M228 0 V 600" strokeWidth="11" />
+            <path d="M-10 70 H 270 M-10 230 H 270 M-10 350 H 270 M-10 455 H 270" strokeWidth="11" />
+            <path d="M0 150 L 260 110 M90 0 L 120 600" strokeWidth="6" />
+          </g>
+          <path ref={route} d={ROUTE} fill="none" stroke="#0356C5" strokeOpacity=".18" strokeWidth="7" strokeLinecap="round" />
+          <motion.path d={ROUTE} fill="none" stroke="#0356C5" strokeWidth="5" strokeLinecap="round" pathLength={1} strokeDasharray="1 1"
+            initial={false} animate={{ strokeDashoffset: -progress, opacity: step === 0 ? .55 : 1 }} transition={{ duration: .25, ease: "linear" }} />
+          {/* Partida (onde o passageiro espera) e destino */}
+          <g transform="translate(196 455)"><circle r="9" fill="#FFFFFF" stroke="#0356C5" strokeWidth="4" /></g>
+          <g transform="translate(40 70)"><rect x="-8" y="-8" width="16" height="16" rx="4" fill="#02060E" /></g>
+          <motion.g initial={false} animate={{ x: car.x, y: car.y }} transition={{ duration: t === 0 ? 0 : .25, ease: "linear" }}>
+            <g transform={`rotate(${car.a})`}>
+              <rect x="-14" y="-9" width="28" height="18" rx="6" fill="#02060E" />
+              <rect x="2" y="-6" width="7" height="12" rx="2" fill="#5CC8FF" />
+              <rect x="-11" y="-6" width="5" height="12" rx="2" fill="#2A3346" />
+            </g>
+          </motion.g>
+        </svg>
+
+        {/* Faixa do topo */}
+        <div className="absolute inset-x-3 top-11 z-10">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div key={step === 3 ? "fim" : step === 2 ? "viagem" : "oferta"} initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: .3 }}
+              className={`flex items-center gap-2.5 rounded-2xl px-3.5 py-2.5 text-white shadow-[0_8px_20px_-10px_rgb(2_6_14/.5)] ${step === 3 ? "bg-[#1B7F5A]" : step === 2 ? "bg-[#02060E]" : "bg-[#0356C5]"}`}>
+              <Icon name={step === 3 ? "check" : step === 2 ? "car" : "pin"} size={18} />
+              <span className="text-[13px] font-semibold leading-tight">
+                {step === 3 ? "Corrida concluída" : step === 2 ? <>Em viagem · <span className="num">{minutes} min</span></> : step === 1 ? "Corrida aceita" : "Nova corrida perto de você"}
+              </span>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
         <AnimatePresence mode="wait" initial={false}>
-          {!done ? (
-            <motion.div key="offer" className="glass-deep rounded-[26px] p-5" initial={{ opacity: 0, y: 24, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -16, scale: .98 }} transition={{ duration: .5, ease: EASE }}>
+          {step < 2 && (
+            <motion.div key="oferta" className={sheet} {...pop}>
+              <span className="mx-auto mb-3 block h-1 w-9 rounded-full bg-[#D5DBE3]" />
               <div className="flex items-center justify-between">
-                <p className="mono-label text-[var(--mark)]">{step === 0 ? "Nova corrida" : step === 1 ? "Aceita" : "Em viagem"}</p>
+                <p className="num text-[12px] text-[#536071]">6,2 km · ~{TRIP_MIN} min</p>
                 {/* Tempo para decidir: o anel esvazia enquanto a oferta está aberta */}
-                <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true">
-                  <circle cx="15" cy="15" r="12" fill="none" stroke="currentColor" strokeOpacity=".15" strokeWidth="3" />
-                  <motion.circle cx="15" cy="15" r="12" fill="none" stroke="#00E1FF" strokeWidth="3" strokeLinecap="round" transform="rotate(-90 15 15)" pathLength={1} strokeDasharray="1 1"
-                    initial={false} animate={{ strokeDashoffset: step === 0 && !reduce ? [0, .7] : 0 }} transition={{ duration: step === 0 ? STEP_MS[0] / 1000 : .3, ease: "linear" }} />
+                <svg width="26" height="26" viewBox="0 0 30 30" aria-hidden="true">
+                  <circle cx="15" cy="15" r="12" fill="none" stroke="#0356C5" strokeOpacity=".15" strokeWidth="3" />
+                  <circle cx="15" cy="15" r="12" fill="none" stroke="#0356C5" strokeWidth="3" strokeLinecap="round" transform="rotate(-90 15 15)" pathLength={1} strokeDasharray="1 1"
+                    strokeDashoffset={step === 0 ? Math.min(.8, (t / OFFER) * .8) : 0} />
                 </svg>
               </div>
-
-              {/* Mini trajeto: partida, chegada e o carro andando quando a viagem começa */}
-              <div className="relative mt-4 h-24 overflow-hidden rounded-2xl bg-[color-mix(in_srgb,var(--deep)_70%,transparent)]">
-                <svg viewBox="0 0 300 96" className="absolute inset-0 size-full" aria-hidden="true">
-                  <path d="M24 70 C 90 70, 110 26, 170 30 S 250 40, 276 22" fill="none" stroke="#9AA8BD" strokeOpacity=".25" strokeWidth="3" strokeLinecap="round" />
-                  <motion.path d="M24 70 C 90 70, 110 26, 170 30 S 250 40, 276 22" fill="none" stroke="url(#of-grad)" strokeWidth="3.5" strokeLinecap="round"
-                    initial={false} animate={{ pathLength: step === 2 ? 1 : step === 1 ? .08 : 0 }} transition={{ duration: step === 2 ? STEP_MS[2] / 1000 - .2 : .4, ease: "easeInOut" }} />
-                  <defs><linearGradient id="of-grad" x1="0" x2="1"><stop offset="0" stopColor="#00E1FF" /><stop offset="1" stopColor="#0A3BFF" /></linearGradient></defs>
-                  <circle cx="24" cy="70" r="5" fill="#F5F7FA" />
-                  <rect x="270" y="16" width="12" height="12" rx="3" fill="#00E1FF" />
-                </svg>
-                <p className="num absolute bottom-2 left-3 text-xs text-on-deep-muted">6,2 km · ~14 min</p>
-              </div>
-
-              <dl className="num mt-4 space-y-1.5 text-sm">
-                <div className="flex justify-between"><dt className="text-on-deep-muted">Valor bruto</dt><dd>{brl(GROSS)}</dd></div>
-                <div className="flex justify-between"><dt className="text-on-deep-muted">Comissão Orbi</dt><dd>− {brl(FEE)}</dd></div>
-                <div className="flex items-baseline justify-between border-t border-[color-mix(in_srgb,var(--on-deep)_14%,transparent)] pt-2">
-                  <dt className="font-semibold">Você recebe</dt><dd className="text-2xl font-semibold text-[var(--mark)]">{brl(NET)}</dd>
+              <dl className="num mt-2 space-y-1 text-[13px]">
+                <div className="flex justify-between"><dt className="text-[#536071]">Valor bruto</dt><dd>{brl(GROSS)}</dd></div>
+                <div className="flex justify-between"><dt className="text-[#536071]">Comissão Orbi</dt><dd>− {brl(FEE)}</dd></div>
+                <div className="flex items-baseline justify-between border-t border-[#E3E8EE] pt-2">
+                  <dt className="font-semibold">Você recebe</dt><dd className="text-2xl font-semibold text-[#0356C5]">{brl(NET)}</dd>
                 </div>
               </dl>
-
-              <div className="mt-4 grid grid-cols-[1fr_2fr] gap-2" aria-hidden="true">
-                <span className="rounded-full py-2.5 text-center text-sm font-semibold text-on-deep-muted shadow-[0_0_0_1px_color-mix(in_srgb,var(--on-deep)_18%,transparent)_inset]">Recusar</span>
-                <motion.span className="rounded-full bg-[var(--cta)] py-2.5 text-center text-sm font-semibold text-white" initial={false}
-                  animate={step === 1 && !reduce ? { scale: [1, .94, 1], boxShadow: ["0 0 0 0 rgb(0 225 255 / 0)", "0 0 0 10px rgb(0 225 255 / .25)", "0 0 0 0 rgb(0 225 255 / 0)"] } : { scale: 1 }}
-                  transition={{ duration: .7 }}>
+              <div className="mt-3.5 grid grid-cols-[1fr_2fr] gap-2 text-[13px] font-semibold">
+                <span className="rounded-full bg-[#F1F4F8] py-2.5 text-center text-[#536071]">Recusar</span>
+                <motion.span className="rounded-full bg-[#0356C5] py-2.5 text-center text-white" initial={false}
+                  animate={step === 1 && !reduce ? { scale: [1, .94, 1] } : { scale: 1 }} transition={{ duration: .5 }}>
                   {step === 0 ? "Aceitar" : <span className="inline-flex items-center gap-1.5"><Icon name="check" size={16} /> Aceita</span>}
                 </motion.span>
               </div>
             </motion.div>
-          ) : (
-            <motion.div key="day" className="glass-deep rounded-[26px] p-5" initial={{ opacity: 0, y: 24, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -16, scale: .98 }} transition={{ duration: .5, ease: EASE }}>
-              <p className="mono-label text-[#5BD49B]">Corrida concluída · + {brl(NET)}</p>
-              <p className="mt-4 text-sm text-on-deep-muted">Ganho de hoje</p>
-              <p className="num text-4xl font-semibold tracking-tight">{brl(total)}</p>
-              {/* Uma barra por corrida do dia; a nova entra por último, no degradê da marca */}
-              <div className="mt-5 flex h-28 items-end gap-2">
+          )}
+          {step === 3 && (
+            <motion.div key="dia" className={sheet} {...pop}>
+              <span className="mx-auto mb-3 block h-1 w-9 rounded-full bg-[#D5DBE3]" />
+              <p className="text-[12px] font-semibold text-[#1B7F5A]">+ {brl(NET)} nesta corrida</p>
+              <p className="mt-2 text-[12px] text-[#536071]">Ganho de hoje</p>
+              <p className="num text-3xl font-semibold tracking-tight">{brl(total)}</p>
+              <div className="mt-3 flex h-16 items-end gap-1.5">
                 {[...DAY, NET].map((v, i) => {
                   const last = i === DAY.length;
                   return (
-                    <motion.span key={i} className="flex-1 rounded-t-lg" style={{ background: last ? "linear-gradient(180deg, #00E1FF, #0A3BFF)" : "color-mix(in srgb, var(--on-deep) 16%, transparent)", originY: 1 }}
-                      initial={{ scaleY: last ? 0 : 1, height: `${(v / max) * 100}%` }} animate={{ scaleY: 1 }} transition={{ duration: .8, delay: last ? .35 : 0, ease: EASE }} />
+                    <motion.span key={i} className="flex-1 rounded-t-md" style={{ background: last ? "#0356C5" : "#D6E4F7", originY: 1, height: `${(v / max) * 100}%` }}
+                      initial={{ scaleY: last ? 0 : 1 }} animate={{ scaleY: 1 }} transition={{ duration: .7, delay: last ? .3 : 0, ease: EASE }} />
                   );
                 })}
               </div>
-              <p className="mt-4 text-xs text-on-deep-muted">Dinheiro na hora; corridas pagas no app viram saldo para saque.</p>
             </motion.div>
           )}
         </AnimatePresence>
-        <p className="mono-label mt-3 text-center text-on-deep-muted">Exemplo ilustrativo</p>
-      </div>
+      </PhoneFrame>
+      <p className="mono-label relative mt-4 text-center text-[#536071]">Exemplo ilustrativo</p>
     </div>
   );
 }

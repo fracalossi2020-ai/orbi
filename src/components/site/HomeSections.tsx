@@ -13,10 +13,10 @@ const focusTrip = () => {
 
 export function DriverBand() {
   return (
-    <section className="on-deep relative isolate overflow-hidden bg-deep text-on-deep">
+    <section aria-label="Para motoristas" className="relative isolate m-2 overflow-hidden rounded-[28px] bg-[#EAF2FF] text-ink md:m-3 md:rounded-[36px]">
       <div className="mx-auto grid max-w-[1440px] items-center gap-10 px-5 py-16 md:px-10 md:py-20 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
         <Reveal>
-          <p className="mono-label text-on-deep-muted">Motorista parceiro</p>
+          <p className="mono-label text-brand">Motorista parceiro</p>
           <h2 className="display mt-3 text-[clamp(2.2rem,4.6vw,4rem)]">Quem movimenta a cidade também merece ser valorizado.</h2>
           <ul className="mt-8 space-y-4">
             {[
@@ -25,17 +25,17 @@ export function DriverBand() {
               ["gift", "Clube Orbi", "Benefícios de parceiros para motoristas aprovados."],
             ].map(([icon, title, text]) => (
               <li key={title} className="flex gap-4">
-                <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[color-mix(in_srgb,var(--on-deep)_9%,transparent)]"><Icon name={icon} size={22} weight="duotone" /></span>
-                <span><span className="block font-semibold">{title}</span><span className="block text-sm text-on-deep-muted">{text}</span></span>
+                <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-white text-primary"><Icon name={icon} size={22} weight="duotone" /></span>
+                <span><span className="block font-semibold">{title}</span><span className="block text-sm text-muted">{text}</span></span>
               </li>
             ))}
           </ul>
           <div className="mt-9 flex flex-wrap gap-3">
-            <Link href="/cadastro?perfil=motorista" className="btn btn-lg btn-on-deep">Quero dirigir <Icon name="arrow" size={18} /></Link>
-            <Link href="/motoristas#ganhos" className="btn btn-lg btn-line-deep">Calcular meus ganhos</Link>
+            <Link href="/cadastro?perfil=motorista" className="btn btn-lg btn-primary">Quero dirigir <Icon name="arrow" size={18} /></Link>
+            <Link href="/motoristas#ganhos" className="btn btn-lg btn-ghost bg-white">Calcular meus ganhos</Link>
           </div>
         </Reveal>
-        <Reveal delay={.1} className="relative min-h-[440px]">
+        <Reveal delay={.1} className="relative">
           <OfferFlow />
         </Reveal>
       </div>
