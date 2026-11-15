@@ -28,7 +28,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      - run: node scripts/build-pages.mjs "${{ github.event.repository.name }}"
+      - run: node scripts/build-pages.mjs "${GITHUB_REPOSITORY#*/}"
         env:
           NEXT_PUBLIC_WHATSAPP: ${{ vars.WHATSAPP }}
       - uses: actions/upload-pages-artifact@v3
