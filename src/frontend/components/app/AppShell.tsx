@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { backTarget, cleanPath } from "@/shared/back-target";
 import { Logo } from "@/frontend/components/Logo";
 import { Icon } from "@/frontend/components/Icon";
 import { api, dateTime, ThemeToggle, useLive } from "@/frontend/components/ui";
@@ -89,12 +90,25 @@ function ModeSwitch({ root }: { root: string }) {
 
 /** Estrutura dos aplicativos: barra inferior no celular, lateral no computador. */
 /** topNav: no computador, barra escura com menu em pílulas no lugar da lateral (passageiro). No celular nada muda. */
-export function AppShell({ nav, title, children, flush, topNav = false }: { nav: NavItem[]; title: string; children: React.ReactNode; flush?: boolean; topNav?: boolean }) {
+export function AppShell({ nav, title, children, flush, topNav = false, backExceptions }: { nav: NavItem[]; title: string; children: React.ReactNode; flush?: boolean; topNav?: boolean; backExceptions?: Record<string, string> }) {
   const path = usePathname();
+  const router = useRouter();
+  // Caminho anterior dentro do app: se for o próprio destino da seta, voltamos no histórico (o voltar do Android não vira vaivém).
+  const cur = useRef<string | null>(null);
+  const prev = useRef<string | null>(null);
+  useEffect(() => { prev.current = cur.current; cur.current = cleanPath(path); }, [path]);
   // Abriu o app já conectado: da próxima vez que sair, a entrada abre no login (e não em "criar conta").
   useEffect(() => { markReturning(); }, []);
   const root = nav[0].href;
   const isActive = (href: string) => (href === root ? path === root : path.startsWith(href));
+  const back = backTarget(path, root, nav.map((n) => n.href), backExceptions);
+  const backLabel = back ? (nav.find((n) => cleanPath(n.href) === back)?.label ?? "Início") : "";
+  // Nas abas principais o menu de pílulas do computador já resolve; só as subtelas mostram a seta no md+.
+  const onMainTab = nav.some((n) => cleanPath(n.href) === cleanPath(path));
+  const goBack = () => {
+    if (!back) return;
+    if (prev.current === back) router.back(); else router.push(back);
+  };
   const logout = async () => { await api("/api/auth/logout", { body: {} }); skipNextSplash(); window.location.href = "/entrar"; };
   return (
     <div className={`flex min-h-svh flex-col bg-bg ${topNav ? "" : "md:flex-row"}`}>
@@ -115,7 +129,13 @@ export function AppShell({ nav, title, children, flush, topNav = false }: { nav:
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className={`sticky top-0 z-40 bg-[color-mix(in_srgb,var(--surface)_96%,transparent)] backdrop-blur-xl flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center pt-[env(safe-area-inset-top)] justify-between border-b border-line px-3 ${topNav ? "md:h-16 md:px-8 md:pt-0" : "md:h-14 md:justify-end md:pt-0"}`}>
-          <Link href={root} className="flex min-h-11 items-center px-1 md:hidden" aria-label="Orbi, tela inicial"><Logo size={26} hole="var(--surface)" /></Link>
+          {back && (
+            <button type="button" onClick={goBack} aria-label={`Voltar para ${backLabel}`} data-testid="app-back"
+              className={`-ml-1 grid size-11 shrink-0 place-items-center rounded-full hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)] ${onMainTab ? "md:hidden" : ""} ${topNav ? "" : "md:hidden"}`}>
+              <Icon name="back" size={22} />
+            </button>
+          )}
+          <Link href={root} className="mr-auto flex min-h-11 items-center px-1 md:hidden" aria-label="Orbi, tela inicial"><Logo size={26} hole="var(--surface)" /></Link>
           {topNav && (
             <div className="hidden min-w-0 flex-1 items-center gap-6 md:flex">
               <Link href={root} aria-label="Orbi, tela inicial"><Logo size={22} hole="var(--surface)" /></Link>

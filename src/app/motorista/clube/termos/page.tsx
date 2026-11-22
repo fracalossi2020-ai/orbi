@@ -1,6 +1,4 @@
-import Link from "next/link";
 import { PageTitle } from "@/frontend/components/app/AppShell";
-import { Icon } from "@/frontend/components/Icon";
 import { PLAN_GENERAL_TERMS, PLAN_SPECS } from "@/shared/plans";
 import { brl } from "@/shared/pricing";
 
@@ -10,7 +8,6 @@ export const metadata = { title: "Termos dos planos · Orbi" };
 export default function PlanTermsPage() {
   return (
     <>
-      <Link href="/motorista/clube" className="mb-4 inline-flex items-center gap-2 text-sm font-semibold"><Icon name="back" size={18} />Clube Orbi</Link>
       <PageTitle sub="Leia antes de assinar. Ao assinar um plano, você concorda com estas regras.">Termos dos planos</PageTitle>
 
       <div className="space-y-6">
