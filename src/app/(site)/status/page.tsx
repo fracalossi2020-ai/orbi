@@ -1,5 +1,5 @@
-import { Badge } from "@/components/ui";
-import { Body, PageHead } from "@/components/site/Page";
+import { Badge } from "@/frontend/components/ui";
+import { Body, PageHead } from "@/frontend/components/site/Page";
 
 export const metadata = { title: "O que já funciona" };
 

@@ -1,5 +1,5 @@
-import { requireRole } from "@/server/guard";
-import { STAFF } from "@/domain/permissions";
+import { requireRole } from "@/backend/guard";
+import { STAFF } from "@/shared/permissions";
 import { AdminShell } from "./shell";
 
 export const metadata = { title: "Administração" };

@@ -2,16 +2,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import type { Metadata } from "next";
-import { getDb, schema as s } from "@/db";
-import { Hero } from "@/components/site/Hero";
-import { ValleyLine } from "@/components/site/ValleyLine";
-import { Destinations } from "@/components/site/Destinations";
-import { Reveal } from "@/components/site/Fx";
-import { Icon } from "@/components/Icon";
-import { brl } from "@/domain/pricing";
-import { currentUser } from "@/server/auth";
-import { publicTariffs } from "@/server/public-data";
-import { STATIC } from "@/lib/site-mode";
+import { getDb, schema as s } from "@/database";
+import { Hero } from "@/frontend/components/site/Hero";
+import { ValleyLine } from "@/frontend/components/site/ValleyLine";
+import { Destinations } from "@/frontend/components/site/Destinations";
+import { Reveal } from "@/frontend/components/site/Fx";
+import { Icon } from "@/frontend/components/Icon";
+import { brl } from "@/shared/pricing";
+import { currentUser } from "@/backend/auth";
+import { publicTariffs } from "@/backend/public-data";
+import { STATIC } from "@/frontend/lib/site-mode";
 
 async function cityBySlug(slug: string) {
   try {
@@ -25,7 +25,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   if (!city) return { title: "Cidade não encontrada" };
   return {
     title: `Corridas em ${city.name}`,
-    description: `Peça um carro em ${city.name}, ${city.state}, e veja o preço antes de confirmar. Motoristas da região, viagem compartilhada e botão de emergência.`,
+    description: `Peça um carro em ${city.name}, ${city.state}, e veja o preço antes de confirmar. Motoristas da região, viagem compartilhada e botão que liga para o 190 com a placa e o local na tela.`,
     alternates: { canonical: `/cidades/${city.slug}` },
   };
 }
@@ -64,7 +64,7 @@ export default async function CityPage({ params }: { params: Promise<{ slug: str
                 <Reveal key={c.slug} delay={i * .06} className="tariff-card relative overflow-hidden rounded-[26px] p-6 shadow-[0_0_0_1px_color-mix(in_srgb,var(--on-deep)_14%,transparent)_inset]">
                   <div className="flex items-baseline justify-between"><h3 className="display text-3xl">{c.name}</h3><span className="mono-label text-on-deep-muted">até {c.seats}</span></div>
                   <dl className="num mt-6 space-y-2.5 font-mono text-sm">
-                    {[["Bandeirada", money(c.tariff.baseCents)], ["Por km", money(c.tariff.perKmCents)], ["Por minuto", money(c.tariff.perMinCents)], ["Corrida mínima", money(c.tariff.minCents)], ["Taxa de serviço", money(c.tariff.serviceFeeCents)]].map(([k, v]) => (
+                    {[["Bandeirada", money(c.tariff.baseCents)], ["Por km", money(c.tariff.perKmCents)], ["Por minuto", money(c.tariff.perMinCents)], ["Corrida mínima", money(c.tariff.minCents)], ...(c.tariff.serviceFeeCents > 0 ? [["Taxa de serviço", money(c.tariff.serviceFeeCents)]] : [])].map(([k, v]) => (
                       <div key={k} className="flex items-baseline gap-2"><dt className="text-on-deep-muted">{k}</dt><span aria-hidden="true" className="flex-1 border-b border-dotted border-[color-mix(in_srgb,var(--on-deep)_25%,transparent)]" /><dd className="font-semibold">{v}</dd></div>
                     ))}
                   </dl>

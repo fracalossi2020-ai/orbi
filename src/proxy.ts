@@ -35,6 +35,9 @@ export function proxy(req: NextRequest) {
   const headers = new Headers(req.headers);
   headers.set("x-nonce", nonce);
   headers.set("Content-Security-Policy", csp);
+  // A tela de entrada precisa saber o perfil pedido (?perfil=motorista) para mandar quem já entrou ao lugar certo.
+  // Sempre regravado aqui: um valor enviado pelo navegador não passa adiante.
+  headers.set("x-perfil", req.nextUrl.searchParams.get("perfil") ?? "");
   const res = NextResponse.next({ request: { headers } });
   res.headers.set("Content-Security-Policy", csp);
   return res;

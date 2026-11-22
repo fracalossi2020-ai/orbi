@@ -22,7 +22,7 @@ const root = process.cwd();
 
 // Tudo que precisa de servidor sai da vitrine.
 const REMOVE = ["src/app/api", "src/app/admin", "src/app/passageiro", "src/app/motorista", "src/app/v", "src/app/(auth)",
-  "src/app/(site)/identidade", "src/app/app-icon", "src/app/manifest.ts", "src/proxy.ts"];
+  "src/app/(site)/identidade", "src/app/app-icon", "src/app/manifest.ts", "src/proxy.ts", "src/instrumentation.ts"];
 
 // Arquivos que ganham linhas só na vitrine. No servidor normal estas linhas quebrariam a página (as cidades
 // leem o login, e uma página com lista fixa não pode ler cookies), então ficam fora do código e entram só aqui.
@@ -35,8 +35,8 @@ const APPEND = {
 };
 const FORCE_STATIC = Object.keys(APPEND);
 
-const DEMO_PAGE = (title) => `import { Body, PageHead } from "@/components/site/Page";
-import { DemoNotice } from "@/components/site/DemoNotice";
+const DEMO_PAGE = (title) => `import { Body, PageHead } from "@/frontend/components/site/Page";
+import { DemoNotice } from "@/frontend/components/site/DemoNotice";
 
 export const metadata = { title: ${JSON.stringify(title)}, robots: { index: false } };
 
@@ -51,7 +51,7 @@ export default function Page() {
 `;
 
 // Tarifas do painel num arquivo, gerado pelo próprio build (o navegador lê no lugar da API).
-const TARIFFS_ROUTE = `import { publicTariffs } from "@/server/public-data";
+const TARIFFS_ROUTE = `import { publicTariffs } from "@/backend/public-data";
 export const dynamic = "force-static";
 export async function GET() { return Response.json(await publicTariffs()); }
 `;

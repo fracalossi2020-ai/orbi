@@ -1,5 +1,5 @@
-import { LeadForm } from "@/components/site/LeadForm";
-import { Body, PageHead } from "@/components/site/Page";
+import { LeadForm } from "@/frontend/components/site/LeadForm";
+import { Body, PageHead } from "@/frontend/components/site/Page";
 
 export const metadata = { title: "Tenho interesse" };
 

@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { Icon } from "@/components/Icon";
-import { Dark, Features, PageHead, type Feature } from "@/components/site/Page";
-import { Reveal } from "@/components/site/Fx";
-import { EarningsSim, OfferCard } from "@/components/site/DriverTools";
+import { Icon } from "@/frontend/components/Icon";
+import { MotoSoon } from "@/frontend/components/MotoSoon";
+import { Body, Dark, Features, PageHead, type Feature } from "@/frontend/components/site/Page";
+import { Reveal } from "@/frontend/components/site/Fx";
+import { EarningsSim, OfferCard } from "@/frontend/components/site/DriverTools";
 
 export const metadata = { title: "Motoristas" };
 
@@ -12,7 +13,7 @@ const BENEFITS: Feature[] = [
   ["wallet", "Extrato de verdade", "Cada corrida no extrato, com relatórios por dia, semana e mês, e pedido de saque."],
   ["gift", "Clube Orbi", "Parceiros locais com condições especiais, e “Minha Economia” somando quanto você poupou."],
   ["help", "Atendimento prioritário", "Chamado de motorista entra na frente da fila."],
-  ["shield", "Sua segurança também", "Passageiro identificado, avaliação nos dois sentidos e botão de emergência."],
+  ["shield", "Sua segurança também", "Passageiro identificado, avaliação nos dois sentidos e botão de emergência que liga para o 190 com a placa e o local na tela. A Orbi recebe o alerta, mas não é um plantão 24 horas."],
 ];
 
 const STEPS = [

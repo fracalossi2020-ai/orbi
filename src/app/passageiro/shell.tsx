@@ -1,12 +1,12 @@
 "use client";
 import { usePathname } from "next/navigation";
-import { AppShell } from "@/components/app/AppShell";
+import { AppShell } from "@/frontend/components/app/AppShell";
 
 const NAV = [
-  { href: "/passageiro", label: "Viajar", icon: "prumo" },
-  { href: "/passageiro/viagens", label: "Viagens", icon: "history" },
-  { href: "/passageiro/ajuda", label: "Ajuda", icon: "help" },
-  { href: "/passageiro/conta", label: "Conta", icon: "user" },
+  { href: "/passageiro", label: "Início", icon: "home", img: "car" as const },
+  { href: "/passageiro/viagens", label: "Viagens", icon: "history", img: "receipt" as const },
+  { href: "/passageiro/ajuda", label: "Ajuda", icon: "help", img: "chat" as const },
+  { href: "/passageiro/conta", label: "Conta", icon: "user", img: "user" as const },
 ];
 
 export function PassengerShell({ children }: { children: React.ReactNode }) {

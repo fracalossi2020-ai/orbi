@@ -13,7 +13,8 @@
     "test": "node scripts/test.mjs run",
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
-    "admin:create": "tsx scripts/create-admin.ts"
+    "admin:create": "tsx scripts/create-admin.ts",
+    "db:check-duplicates": "tsx scripts/check-duplicates.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.15",

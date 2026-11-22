@@ -1,13 +1,16 @@
 "use client";
 import { useState } from "react";
-import { PageTitle } from "@/components/app/AppShell";
-import { Icon } from "@/components/Icon";
-import { api, Badge, dateTime, Empty, ErrorNote, Field, Note, pct, Spinner, useAction, useLive } from "@/components/ui";
-import { brl } from "@/domain/pricing";
+import { PageTitle } from "@/frontend/components/app/AppShell";
+import { Icon } from "@/frontend/components/Icon";
+import { api, Badge, dateTime, Empty, ErrorNote, Field, Note, pct, Spinner, useAction, useLive } from "@/frontend/components/ui";
+import { brl } from "@/shared/pricing";
+import { planSpec } from "@/shared/plans";
+import Link from "next/link";
 
 type Partner = { id: string; name: string; category: string; city: string; address: string; phone: string; benefit: string };
 type Club = {
-  partners: Partner[]; plans: { id: string; name: string; description: string; priceCents: number; periodDays: number; commissionBps: number }[];
+  partners: Partner[]; plans: { id: string; name: string; description: string; priceCents: number; periodDays: number; commissionBps: number; tier: string | null }[];
+  current: { planId: string; until: string } | null;
   campaigns: { id: string; name: string; description: string; kind: string; bonusPerRideCents: number }[];
   savings: { id: string; partnerName: string; originalCents: number; paidCents: number; createdAt: string }[]; totalSavedCents: number;
 };
@@ -68,17 +71,39 @@ export default function ClubePage() {
         </section>
       )}
 
-      <section className="mt-6">
-        <h2 className="display mb-3 text-2xl">Planos de assinatura</h2>
+      <section className="mt-6" aria-labelledby="planos">
+        <h2 id="planos" className="display mb-1 text-2xl">Planos para motoristas</h2>
+        <p className="mb-4 text-sm text-muted">Desconto nas oficinas parceiras do Vale do Aço e, nos planos maiores, crédito todo mês e comissão menor. Não é seguro: a oficina responde pelo serviço.</p>
         {!data.plans.length ? <Note>Nenhum plano disponível no momento. A comissão padrão da sua cidade continua valendo.</Note> : (
-          <ul className="grid gap-3 sm:grid-cols-2">
-            {data.plans.map((p) => (
-              <li key={p.id} className="card p-4"><p className="display text-xl">{p.name}</p><p className="text-sm text-muted">{p.description}</p>
-                <p className="num mt-2 text-sm">{brl(p.priceCents)} a cada {p.periodDays} dias · comissão de {pct(p.commissionBps)}</p>
-                <button type="button" className="btn btn-soft btn-sm mt-3" disabled={busy} onClick={() => run(async () => { await api("/api/driver/plan", { body: { planId: p.id } }); reload(); })}><Icon name="check" size={16} /> Assinar com meu saldo</button></li>
-            ))}
+          <ul className="grid gap-3 lg:grid-cols-3">
+            {data.plans.map((p) => {
+              const spec = planSpec(p.tier);
+              const mine = data.current?.planId === p.id;
+              const top = p.tier === "pro";
+              return (
+                <li key={p.id} data-testid={`plan-${p.tier ?? p.id}`} className={`relative flex flex-col rounded-[26px] p-5 ${top ? "bg-brand-solid text-white" : "card"}`}>
+                  {top && <span className="absolute -top-2.5 right-5 rounded-full bg-night px-2.5 py-1 text-[11px] font-bold text-white">Mais completo</span>}
+                  <p className="display text-2xl">{p.name}</p>
+                  <p className={`text-sm ${top ? "text-white/80" : "text-muted"}`}>{spec?.tagline ?? p.description}</p>
+                  <p className="num mt-3"><span className="display text-4xl">{brl(p.priceCents)}</span><span className={`text-sm ${top ? "text-white/80" : "text-muted"}`}> / {p.periodDays} dias</span></p>
+                  <p className={`num text-sm ${top ? "text-white/80" : "text-muted"}`}>Comissão de {pct(p.commissionBps)} nas corridas</p>
+                  {spec && (
+                    <ul className="mt-4 flex-1 space-y-2 text-sm">
+                      {spec.benefits.map((b) => <li key={b} className="flex gap-2"><Icon name="check" size={18} className={`mt-px shrink-0 ${top ? "text-white" : "text-brand"}`} />{b}</li>)}
+                    </ul>
+                  )}
+                  {mine && <p className={`mt-4 text-sm font-semibold ${top ? "" : "text-ok"}`}>Seu plano, ativo até {dateTime(data.current!.until)}</p>}
+                  <button type="button" className={`btn btn-sm mt-4 w-full ${top ? "bg-white text-night" : "btn-primary"}`} disabled={busy}
+                    onClick={() => { if (window.confirm(`Assinar o ${p.name} por ${brl(p.priceCents)}? O valor sai do seu saldo na Orbi. Ao assinar, você aceita os termos do plano.`)) run(async () => { await api("/api/driver/plan", { body: { planId: p.id } }); reload(); }); }}>
+                    {mine ? "Renovar por mais 30 dias" : "Assinar com meu saldo"}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
+        <div className="mt-2"><ErrorNote>{error}</ErrorNote></div>
+        <p className="mt-3 text-sm"><Link href="/motorista/clube/termos" className="font-semibold underline">Ler os termos dos planos</Link></p>
       </section>
     </>
   );

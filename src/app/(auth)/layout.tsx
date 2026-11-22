@@ -1,24 +1,21 @@
-import Link from "next/link";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { Logo } from "@/components/Logo";
-import { currentUser } from "@/server/auth";
+import AppSplash from "@/frontend/components/app/AppSplash";
+import { currentUser } from "@/backend/auth";
 
 export default async function AuthLayout({ children }: { children: React.ReactNode }) {
   // Quem já entrou abre direto na própria tela, como em um aplicativo.
+  // Passageiro que veio por "Quero dirigir" (?perfil=motorista, lido pelo proxy) vai para "Seja motorista".
   const user = await currentUser();
-  if (user) redirect(user.role === "driver" ? "/motorista" : user.role === "passenger" ? "/passageiro" : "/admin");
+  if (user) {
+    const forDriver = (await headers()).get("x-perfil") === "motorista";
+    redirect(user.role === "driver" ? "/motorista" : user.role === "passenger" ? (forDriver ? "/passageiro/dirigir" : "/passageiro") : "/admin");
+  }
+  // A tela de entrada monta o próprio layout (painel com a animação e o formulário); aqui fica só a abertura.
   return (
-    <div className="grid min-h-svh lg:grid-cols-[1fr_1.1fr]">
-      <aside className="on-deep relative hidden overflow-hidden bg-deep p-12 text-on-deep lg:flex lg:flex-col lg:justify-between">
-        <Link href="/" aria-label="Orbi, página inicial"><Logo size={30} /></Link>
-        <p className="display max-w-[12ch] text-6xl">Sua direção, nosso compromisso.</p>
-      </aside>
-      <main className="flex flex-col justify-center px-5 py-10 sm:px-10">
-        <div className="mx-auto w-full max-w-md">
-          <Link href="/" className="mb-8 inline-block lg:hidden" aria-label="Orbi, página inicial"><Logo size={26} hole="var(--bg)" /></Link>
-          {children}
-        </div>
-      </main>
-    </div>
+    <>
+      <AppSplash />
+      <div className="min-h-svh bg-bg text-ink">{children}</div>
+    </>
   );
 }

@@ -1,8 +1,10 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
-import { PageTitle } from "@/components/app/AppShell";
-import { api, Badge, dateTime, Empty, ErrorNote, Field, km, Note, Spinner, useAction, useLive } from "@/components/ui";
-import { brl } from "@/domain/pricing";
+import { PageTitle } from "@/frontend/components/app/AppShell";
+import { api, Badge, dateTime, Empty, ErrorNote, Field, km, Note, Spinner, useAction, useLive } from "@/frontend/components/ui";
+import { brl } from "@/shared/pricing";
+import { useReauth } from "@/frontend/components/app/Reauth";
 
 type Finance = {
   balanceCents: number; minWithdrawalCents: number;
@@ -17,7 +19,8 @@ export default function Ganhos() {
   const [period, setPeriod] = useState<string>("day");
   const { data, loading, reload } = useLive<Finance>(`/api/driver/finance?period=${period}`);
   const [amount, setAmount] = useState("");
-  const [pixKey, setPixKey] = useState("");
+  const reauth = useReauth();
+  const { data: me } = useLive<{ driver: { pixKey: string | null } | null }>("/api/driver/state", { live: false });
   const { busy, error, run } = useAction();
   if (loading && !data) return <Spinner />;
   if (!data) return null;
@@ -40,14 +43,15 @@ export default function Ganhos() {
       <section className="card mt-4 p-5">
         <div className="flex items-baseline justify-between"><h2 className="display text-xl">Saldo</h2><p className={`display num text-3xl ${data.balanceCents < 0 ? "text-danger" : ""}`} data-testid="balance">{brl(data.balanceCents)}</p></div>
         {data.balanceCents < 0 && <div className="mt-2"><Note tone="warn">Saldo negativo vem da parte da Orbi nas corridas em dinheiro. As próximas corridas digitais abatem esse valor.</Note></div>}
-        <form className="mt-4 grid gap-3 sm:grid-cols-[1fr_2fr_auto] sm:items-end" onSubmit={(e) => { e.preventDefault(); run(async () => {
-          await api("/api/driver/withdrawals", { body: { amountCents: Math.round(Number(amount.replace(",", ".")) * 100), pixKey } });
-          setAmount(""); reload();
+        <form className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end" onSubmit={(e) => { e.preventDefault(); run(async () => {
+          await api("/api/driver/withdrawals", { body: { amountCents: Math.round(Number(amount.replace(",", ".")) * 100), ...reauth.payload } });
+          setAmount(""); reauth.clear(); reload();
         }); }}>
           <Field label="Valor do saque"><input className="input" inputMode="decimal" required placeholder="0,00" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
-          <Field label="Chave Pix"><input className="input" required value={pixKey} onChange={(e) => setPixKey(e.target.value)} /></Field>
-          <button className="btn btn-primary" disabled={busy}>Solicitar saque</button>
+          <div className="sm:col-span-2">{reauth.field}</div>
+          <button className="btn btn-primary" disabled={busy || !reauth.filled || !me?.driver?.pixKey}>Solicitar saque</button>
         </form>
+        <p className="mt-2 text-xs text-muted">{me?.driver?.pixKey ? <>O saque vai para a chave Pix cadastrada no seu perfil (<span className="num">{me.driver.pixKey}</span>). Para trocar, use <Link className="underline" href="/motorista/conta#recebimento">Como você recebe</Link>.</> : <>Cadastre sua chave Pix em <Link className="underline" href="/motorista/conta#recebimento">Como você recebe</Link> para poder sacar.</>}</p>
         <p className="mt-2 text-xs text-muted">Mínimo de {brl(data.minWithdrawalCents)}. O pedido passa pela equipe financeira, e a transferência é feita fora do aplicativo até a integração com o provedor de pagamentos.</p>
         <div className="mt-2"><ErrorNote>{error}</ErrorNote></div>
         {data.withdrawals.length > 0 && (

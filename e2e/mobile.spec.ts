@@ -1,5 +1,5 @@
 import { devices, expect, test, type Page } from "@playwright/test";
-import { adminApi, approvedDriverApi, BASE, IPATINGA, signUp, uniquePhone } from "./helpers";
+import { openTrip, adminApi, approvedDriverApi, BASE, IPATINGA, signUp, uniquePhone } from "./helpers";
 
 /** Telas no celular: nada passa da largura da tela, e o botão de pedir nunca fica atrás da barra de baixo. */
 const PHONES = {
@@ -23,7 +23,11 @@ for (const [name, dev] of Object.entries(PHONES)) {
     const admin = await adminApi();
     const d = await approvedDriverApi(admin);
     try {
+      // A partida vem do GPS e o nome do endereço varia de uma execução para outra (o serviço real devolve o que está mais perto).
+      // Fixamos um nome longo, que quebra em várias linhas no celular: era isso que empurrava o botão de pedir para trás da borda da folha.
+      await page.route("**/api/geo/reverse*", (r) => r.fulfill({ json: { inArea: true, place: { label: "Centro Esportivo e Cultural 7 de Outubro", detail: "Avenida Marechal Cândido Rondon · Parque Ipanema · Ipatinga", lat: IPATINGA.latitude, lng: IPATINGA.longitude, kind: "place", inArea: true } } }));
       await signUp(page, "passageiro", uniquePhone(), "Bruna Teste Celular");
+      await openTrip(page);
       await expect(page.getByRole("combobox", { name: "Partida" })).not.toHaveValue("", { timeout: 20000 });
       await page.route("**/api/geo/search*", (r) => r.fulfill({ json: { places: [{ label: "Shopping do Vale do Aço", detail: "Avenida Amazonas · Industrial · Ipatinga", lat: -19.4818, lng: -42.5262, kind: "place", inArea: true }] } }));
       await page.getByRole("combobox", { name: "Destino final" }).fill("Shopping");

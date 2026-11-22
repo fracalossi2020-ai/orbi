@@ -1,44 +1,53 @@
-import { and, eq, ne, or } from "drizzle-orm";
+import { and, desc, eq, ne, or } from "drizzle-orm";
 import { z } from "zod";
-import { getDb, schema as s } from "@/db";
-import { ApiError, audit, body, publicRoute } from "@/server/api";
-import { checkRateLimit, decryptTotp, endSession, hashPassword, mfaPending, publicUser, readSession, revokeSessions, startSession, verifyPassword } from "@/server/auth";
-import { clientIp, hashRecovery, passwordProblem, resetLimit, verifyTotp } from "@/server/security";
-import { sendCode, useCode } from "@/server/codes";
-import { maskEmail } from "@/server/mail";
-import { emailDomainExists } from "@/server/verify";
-import { isFullName, isValidEmailFormat, isValidMobile } from "@/domain/validation";
+import { getDb, schema as s } from "@/database";
+import { ApiError, audit, body, publicRoute } from "@/backend/api";
+import { authSecret, checkRateLimit, cpfScan, cpfTaken, decryptTotp, endSession, hashPassword, mfaPending, publicUser, readSession, revokeSessions, startSession, verifyPassword } from "@/backend/auth";
+import { clientIp, findRecovery, passwordProblem, resetLimit, verifyTotp } from "@/backend/security";
+import { sendCode, useCode } from "@/backend/codes";
+import { maskEmail } from "@/backend/mail";
+import { emailDomainExists } from "@/backend/verify";
+import { isFullName, isValidCpf, isValidEmailFormat, isValidMobile } from "@/shared/validation";
+import { cpfTakenMessage, normalizeIdentifier } from "@/shared/account";
 
 const digits = (v: string) => v.replace(/\D/g, "");
+/** CPF guardado só com os dígitos. */
+const cpfField = z.string({ error: "Informe o CPF." }).transform(digits).refine(isValidCpf, "CPF inválido. Confira os números.");
 const MOBILE_ERROR = "Celular inválido: use DDD e número com 9 na frente.";
 const EMAIL_DOMAIN_ERROR = "Este e-mail não pode receber mensagens. Confira o que vem depois do @.";
 const password = z.string().min(8, "A senha precisa de pelo menos 8 caracteres.").max(128, "A senha pode ter até 128 caracteres.");
 const mfaSchema = z.object({ code: z.string().trim().min(6).max(20) });
 const changeSchema = z.object({ current: z.string().min(1, "Informe a senha atual."), password });
 const registerSchema = z.object({
-  name: z.string().trim().refine(isFullName, "Informe nome e sobrenome."),
+  name: z.string().trim().max(80, "O nome pode ter até 80 caracteres.").refine(isFullName, "Informe nome e sobrenome."),
   email: z.string().trim().toLowerCase().email("E-mail inválido.").optional().or(z.literal("")),
   phone: z.string().transform(digits).refine((v) => v.length === 0 || isValidMobile(v), MOBILE_ERROR).optional(),
   password,
-  role: z.enum(["passenger", "driver"]),
+  cpf: cpfField,
+  // Toda conta nasce passageiro: virar motorista é um passo dentro da conta (/passageiro/dirigir). Um "role" no corpo é ignorado.
   acceptPrivacy: z.literal(true, { error: "Aceite os termos e a política de privacidade para continuar." }),
 }).refine((v) => v.email || v.phone, { message: "Informe e-mail ou telefone." });
 
 const identifierSchema = z.string().trim().min(3, "Informe e-mail ou telefone.");
 const lookupSchema = z.object({ identifier: identifierSchema });
-const loginSchema = z.object({ identifier: identifierSchema, password: z.string().min(1, "Informe a senha.") });
+/** Consulta por e-mail/telefone ({ identifier }) ou por CPF ({ cpf }). */
+const lookupAnySchema = z.object({ identifier: z.string().optional(), cpf: z.string().optional() });
+const loginSchema = z.object({ identifier: identifierSchema, password: z.string().min(1, "Informe a senha."), remember: z.boolean().optional() });
 const resetConfirmSchema = z.object({ identifier: identifierSchema, code: z.string().trim(), password });
-const emailSendSchema = z.object({ email: z.string().trim().toLowerCase().email("E-mail inválido.").optional() });
+const emailSendSchema = z.object({ email: z.string().trim().toLowerCase().email("E-mail inválido.").optional(), password: z.string().max(128).optional() });
 const codeSchema = z.object({ code: z.string().trim() });
 
 /** E-mail só compara com e-mail: um endereço como 31999998888@x.com não pode achar a conta desse telefone. */
-const identifierMatch = (key: string) => (key.includes("@") ? eq(s.users.email, key) : eq(s.users.phone, digits(key) || "-"));
+const identifierMatch = (raw: string) => {
+  const key = normalizeIdentifier(raw);
+  return key.includes("@") ? eq(s.users.email, key) : eq(s.users.phone, digits(key) || "-");
+};
 
 export const POST = publicRoute<{ action: string }>(async ({ req, user: session, params }) => {
   const db = await getDb();
   const ip = clientIp(req);
   const findActive = async (identifier: string) => {
-    const [u] = await db.select().from(s.users).where(identifierMatch(identifier.toLowerCase()));
+    const [u] = await db.select().from(s.users).where(identifierMatch(identifier));
     return u && u.status === "active" ? u : null;
   };
 
@@ -52,10 +61,14 @@ export const POST = publicRoute<{ action: string }>(async ({ req, user: session,
     if (weak) throw new ApiError(400, weak);
     const clash = await db.select({ id: s.users.id }).from(s.users).where(or(email ? eq(s.users.email, email) : undefined, phone ? eq(s.users.phone, phone) : undefined));
     if (clash.length) throw new ApiError(409, "Já existe uma conta com este e-mail ou telefone.");
+    // O CPF tem limite próprio e apertado: a resposta diz se o número tem conta (dado pessoal).
+    const scan = cpfScan(ip);
+    if (scan === "limited") throw new ApiError(429, "Muitas tentativas. Aguarde alguns minutos.");
+    if (await cpfTaken(v.cpf)) throw new ApiError(409, cpfTakenMessage(scan));
     const [user] = await db.insert(s.users).values({
-      name: v.name, email, phone, role: v.role, passwordHash: await hashPassword(v.password), privacyAcceptedAt: new Date(),
+      name: v.name, email, phone, cpf: v.cpf, role: "passenger", passwordHash: await hashPassword(v.password), privacyAcceptedAt: new Date(),
     }).returning();
-    await audit(user.id, "register", "user", user.id, { role: v.role });
+    await audit(user.id, "register", "user", user.id, { role: "passenger" });
     await startSession(user.id);
     // A conta já funciona; o código de confirmação chega por e-mail. Falha no envio não impede o cadastro.
     if (email) await sendCode(user, email, "email_verify").catch(() => undefined);
@@ -65,11 +78,20 @@ export const POST = publicRoute<{ action: string }>(async ({ req, user: session,
   // Informa se a conta existe, como o cadastro já faz ao recusar duplicados: o limite por endereço restringe varreduras.
   if (params.action === "lookup") {
     if (!checkRateLimit(`lookup:${ip}`, 30)) throw new ApiError(429, "Muitas tentativas. Aguarde alguns minutos.");
-    const v = await body(req, lookupSchema);
-    const [user] = await db.select({ id: s.users.id }).from(s.users).where(identifierMatch(v.identifier.toLowerCase()));
+    const raw = await body(req, lookupAnySchema);
+    // CPF: avisa no cadastro, antes de chegar à senha, que ele já está em outra conta. É só um aviso antecipado
+    // (o cadastro confere de novo): passado o limite, responde "não existe" sem consultar, para não servir de
+    // varredura de listas de CPFs, nem por um endereço só nem trocando de endereço (limite geral).
+    if (raw.cpf !== undefined && raw.identifier === undefined) {
+      const cpf = cpfField.parse(raw.cpf);
+      if (cpfScan(ip) !== "ok") return { exists: false };
+      return { exists: await cpfTaken(cpf) };
+    }
+    const v = lookupSchema.parse(raw);
+    const [user] = await db.select({ id: s.users.id }).from(s.users).where(identifierMatch(v.identifier));
     if (user) return { exists: true };
     // Conta nova: avisa do erro de digitação logo aqui, antes das outras perguntas.
-    const key = v.identifier.toLowerCase();
+    const key = normalizeIdentifier(v.identifier);
     if (key.includes("@")) {
       if (!isValidEmailFormat(key)) throw new ApiError(400, "E-mail inválido.");
       if (!(await emailDomainExists(key))) throw new ApiError(400, EMAIL_DOMAIN_ERROR);
@@ -79,12 +101,12 @@ export const POST = publicRoute<{ action: string }>(async ({ req, user: session,
 
   if (params.action === "login") {
     const v = await body(req, loginSchema);
-    const key = v.identifier.toLowerCase();
+    const key = normalizeIdentifier(v.identifier);
     // Dois limites: por conta (quem troca de IP não ganha tentativas a mais) e por IP (quem testa muitas contas).
     if (!checkRateLimit(`login:acct:${key}`, 8) || !checkRateLimit(`login:ip:${ip}`, 40)) {
       throw new ApiError(429, "Muitas tentativas. Aguarde 15 minutos ou use \"Esqueci a senha\".");
     }
-    const [user] = await db.select().from(s.users).where(identifierMatch(key));
+    const [user] = await db.select().from(s.users).where(identifierMatch(v.identifier));
     // A senha é conferida mesmo sem conta (contra uma senha falsa): o tempo de resposta não revela se a conta existe.
     const ok = await verifyPassword(v.password, user?.passwordHash);
     if (!user || user.status !== "active" || !ok) {
@@ -93,7 +115,7 @@ export const POST = publicRoute<{ action: string }>(async ({ req, user: session,
     }
     resetLimit(`login:acct:${key}`);
     await audit(user.id, "login", "user", user.id);
-    await startSession(user.id);
+    await startSession(user.id, { remember: v.remember });
     // Com a verificação em duas etapas, a sessão só vale depois do código do aplicativo autenticador.
     if (user.totpEnabledAt) return { mfaRequired: true };
     return publicUser(user);
@@ -112,9 +134,9 @@ export const POST = publicRoute<{ action: string }>(async ({ req, user: session,
       if (step !== null) { accepted = true; await db.update(s.users).set({ totpLastStep: step }).where(eq(s.users.id, r.user.id)); }
     } else {
       // Código de recuperação: vale uma única vez.
-      const h = hashRecovery(code);
       const left = r.user.recoveryCodes ?? [];
-      if (left.includes(h)) {
+      const h = findRecovery(code, left, authSecret());
+      if (h) {
         accepted = true;
         await db.update(s.users).set({ recoveryCodes: left.filter((x) => x !== h) }).where(eq(s.users.id, r.user.id));
         await audit(r.user.id, "mfa.recovery_used", "user", r.user.id, { left: left.length - 1 });
@@ -179,28 +201,79 @@ export const POST = publicRoute<{ action: string }>(async ({ req, user: session,
 
   if (params.action === "email-send" || params.action === "email-confirm") {
     if (!session) throw new ApiError(401, "Entre na sua conta para continuar.");
+    // Conta do Google não tem senha escolhida (a guardada é aleatória), então não há senha para pedir. Nela, quem
+    // prova ser o dono é o e-mail ATUAL: ele recebe um código antes de o endereço novo ser aceito (e depois o novo recebe o seu).
+    const viaCurrent = Boolean(session.googleSub);
+    // Etapa do código do e-mail atual: o último pedido dele e se já foi usado (usar vale 30 min para concluir a troca).
+    const currentStage = async () => {
+      const [row] = await db.select().from(s.verificationCodes)
+        .where(and(eq(s.verificationCodes.userId, session.id), eq(s.verificationCodes.purpose, "email_change_old")))
+        .orderBy(desc(s.verificationCodes.createdAt)).limit(1);
+      return row?.usedAt && Date.now() - row.usedAt.getTime() < 30 * 60_000 ? "done" as const : "pending" as const;
+    };
+    const clearCurrent = () => db.delete(s.verificationCodes).where(and(eq(s.verificationCodes.userId, session.id), eq(s.verificationCodes.purpose, "email_change_old")));
+
     if (params.action === "email-confirm") {
       const v = await body(req, codeSchema);
-      if (!session.email) throw new ApiError(409, "Cadastre um e-mail primeiro.");
+      const target = session.pendingEmail ?? session.email;
+      if (!target) throw new ApiError(409, "Cadastre um e-mail primeiro.");
+      if (session.pendingEmail && viaCurrent && (await currentStage()) !== "done") {
+        // Primeira etapa: o código do e-mail atual autoriza a troca; só então o endereço novo recebe o dele.
+        await useCode(session.id, "email_change_old", v.code);
+        await sendCode(session, session.pendingEmail, "email_verify");
+        return { ok: true, next: "new", sentTo: maskEmail(session.pendingEmail) };
+      }
       await useCode(session.id, "email_verify", v.code);
-      await db.update(s.users).set({ emailVerifiedAt: new Date() }).where(eq(s.users.id, session.id));
+      if (session.pendingEmail) {
+        // Só agora o e-mail novo passa a ser o da conta (e o canal de recuperação de senha).
+        const [other] = await db.select({ id: s.users.id }).from(s.users).where(and(eq(s.users.email, session.pendingEmail), ne(s.users.id, session.id)));
+        if (other) throw new ApiError(409, "Este e-mail já está em outra conta.");
+        await db.update(s.users).set({ email: session.pendingEmail, pendingEmail: null, emailVerifiedAt: new Date() }).where(eq(s.users.id, session.id));
+        await clearCurrent();
+        await audit(session.id, "email.change", "user", session.id);
+      } else {
+        await db.update(s.users).set({ emailVerifiedAt: new Date() }).where(eq(s.users.id, session.id));
+      }
       await audit(session.id, "email.verified", "user", session.id);
       return { ok: true };
     }
     const v = await body(req, emailSendSchema);
-    let email = session.email;
-    // Novo endereço: vale só depois de confirmado, e não pode pertencer a outra conta.
+    // Sem endereço novo: reenvia para o que está pendente ou, não havendo, para o e-mail atual (primeira confirmação).
+    let email = session.pendingEmail ?? session.email;
+    // Endereço novo: fica pendente até o código ser confirmado, pede a senha atual e não pode pertencer a outra conta.
     if (v.email && v.email !== session.email) {
+      if (!checkRateLimit(`emailchange:${session.id}`, 5)) throw new ApiError(429, "Muitas tentativas. Aguarde 15 minutos.");
+      if (viaCurrent) {
+        if (!session.email || !session.emailVerifiedAt) throw new ApiError(409, "Confirme seu e-mail atual antes de trocar por outro.");
+      } else {
+        if (!v.password) throw new ApiError(400, "Informe sua senha atual para trocar o e-mail.");
+        if (!(await verifyPassword(v.password, session.passwordHash))) throw new ApiError(400, "A senha atual não confere.");
+      }
       if (!(await emailDomainExists(v.email))) throw new ApiError(400, EMAIL_DOMAIN_ERROR);
       const [other] = await db.select({ id: s.users.id }).from(s.users).where(and(eq(s.users.email, v.email), ne(s.users.id, session.id)));
       if (other) throw new ApiError(409, "Este e-mail já está em outra conta.");
-      await db.update(s.users).set({ email: v.email, emailVerifiedAt: null }).where(eq(s.users.id, session.id));
-      await audit(session.id, "email.change", "user", session.id);
+      // Troca nova começa do zero: autorização do e-mail atual de uma troca anterior não vale para este endereço.
+      await clearCurrent();
+      await db.update(s.users).set({ pendingEmail: v.email }).where(eq(s.users.id, session.id));
+      await audit(session.id, "email.change_request", "user", session.id);
       email = v.email;
+      if (viaCurrent) {
+        await sendCode(session, session.email!, "email_change_old");
+        return { sentTo: maskEmail(session.email!), step: "current" };
+      }
+    } else if (v.email && session.pendingEmail) {
+      // Voltou ao e-mail atual: descarta a troca pendente.
+      await db.update(s.users).set({ pendingEmail: null }).where(eq(s.users.id, session.id));
+      await clearCurrent();
+      email = session.email;
+    } else if (viaCurrent && session.pendingEmail && session.email && (await currentStage()) !== "done") {
+      // Reenvio ainda na primeira etapa: o código continua indo para o e-mail atual, nunca direto para o novo.
+      await sendCode(session, session.email, "email_change_old");
+      return { sentTo: maskEmail(session.email), step: "current" };
     }
     if (!email) throw new ApiError(400, "Informe o e-mail.");
     await sendCode(session, email, "email_verify");
-    return { sentTo: maskEmail(email) };
+    return { sentTo: maskEmail(email), ...(viaCurrent && session.pendingEmail ? { step: "new" } : {}) };
   }
 
   if (params.action === "logout") {

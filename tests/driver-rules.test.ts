@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_DRIVER_RULES as R, driverProblems, vehicleProblems, withDefaultRules } from "@/domain/driver-rules";
+import { DEFAULT_DRIVER_RULES as R, driverProblems, vehicleProblems, withDefaultRules } from "@/shared/driver-rules";
 
 const now = new Date("2026-11-10T12:00:00");
 const ok = { birthDate: new Date("1990-05-10"), cnhCategory: "B", cnhFirstLicenseAt: new Date("2012-03-01"), cnhExpiresAt: new Date("2029-12-31"), ear: true };

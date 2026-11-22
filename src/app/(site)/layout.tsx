@@ -1,9 +1,9 @@
 import { ViewTransition } from "react";
 import { eq } from "drizzle-orm";
-import { PlumbLine, SiteFooter, SiteNav } from "@/components/site/Chrome";
-import { CookieNotice } from "@/components/site/Fx";
-import { getDb, schema as s } from "@/db";
-import { currentUser } from "@/server/auth";
+import { PlumbLine, SiteFooter, SiteNav } from "@/frontend/components/site/Chrome";
+import { CookieNotice } from "@/frontend/components/site/Fx";
+import { getDb, schema as s } from "@/database";
+import { currentUser } from "@/backend/auth";
 
 const HOME: Record<string, string> = { passenger: "/passageiro", driver: "/motorista", admin: "/admin", gestor: "/admin", atendente: "/admin" };
 

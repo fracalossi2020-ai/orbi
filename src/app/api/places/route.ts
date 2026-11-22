@@ -1,7 +1,8 @@
 import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { getDb, schema as s } from "@/db";
-import { ApiError, body, route } from "@/server/api";
+import { getDb, schema as s } from "@/database";
+import { ApiError, body, route } from "@/backend/api";
+import { PASSENGER_APP } from "@/shared/permissions";
 
 const MAX_OTHER = 10;
 const NAME: Record<string, string> = { home: "Casa", work: "Trabalho" };
@@ -21,7 +22,7 @@ export const GET = route(async ({ user }) => {
   const db = await getDb();
   const rows = await db.select().from(s.savedPlaces).where(eq(s.savedPlaces.userId, user.id)).orderBy(asc(s.savedPlaces.createdAt));
   return { places: rows.map(view) };
-}, { roles: ["passenger"] });
+}, { roles: PASSENGER_APP });
 
 /** Casa e trabalho são substituídos ao salvar de novo; os outros precisam de nome. */
 export const POST = route(async ({ req, user }) => {
@@ -42,7 +43,7 @@ export const POST = route(async ({ req, user }) => {
   }
   const [row] = await db.insert(s.savedPlaces).values(values).returning();
   return view(row);
-}, { roles: ["passenger"] });
+}, { roles: PASSENGER_APP });
 
 export const DELETE = route(async ({ req, user }) => {
   const id = new URL(req.url).searchParams.get("id") ?? "";
@@ -51,4 +52,4 @@ export const DELETE = route(async ({ req, user }) => {
   const [row] = await db.delete(s.savedPlaces).where(and(eq(s.savedPlaces.id, id), eq(s.savedPlaces.userId, user.id))).returning();
   if (!row) throw new ApiError(404, "Local não encontrado.");
   return { ok: true };
-}, { roles: ["passenger"] });
+}, { roles: PASSENGER_APP });

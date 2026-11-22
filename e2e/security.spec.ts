@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { apiClient, BASE, passengerApi, PNG, signUp, uniquePhone } from "./helpers";
-import { totpAt, totpStep } from "../src/server/security";
+import { advance, apiClient, BASE, chooseEntry, driverAccountApi, ownAddress, passengerApi, PNG, signUp, uniquePhone, validCpf } from "./helpers";
+import { totpAt, totpStep } from "../src/backend/security";
 
 test.describe.configure({ mode: "serial" });
 
@@ -52,7 +52,7 @@ test("login: trava por conta mesmo trocando de IP; senha fraca é recusada", asy
     last = (await c.post("/api/auth/login", { data: { identifier: me.email, password: `errada-${i}` } })).status();
   }
   expect(last).toBe(429);
-  const weak = await (await apiClient()).post("/api/auth/register", { data: { name: "Sara Teste Fraca", email: `fraca${Date.now()}@e2e.prumo.test`, password: "12345678", role: "passenger", acceptPrivacy: true } });
+  const weak = await (await apiClient()).post("/api/auth/register", { data: { name: "Sara Teste Fraca", email: `fraca${Date.now()}@e2e.prumo.test`, password: "12345678", cpf: validCpf(), acceptPrivacy: true } });
   expect(weak.status()).toBe(400);
   expect((await weak.json()).error).toContain("fácil de adivinhar");
 });
@@ -121,15 +121,17 @@ test("verificação em duas etapas: ativar, entrar com código, recuperação e 
   // Pela tela: código de recuperação, que vale uma vez só
   const third = await browser.newContext({ baseURL: BASE });
   const tp = await third.newPage();
+  await ownAddress(tp);
   await tp.goto("/entrar");
+  await chooseEntry(tp, "celular");
   await tp.getByLabel("Celular com DDD").fill(phone);
-  await tp.getByRole("button", { name: "Continuar" }).click();
+  await advance(tp);
   await tp.getByPlaceholder("Senha").fill("senha-de-teste");
-  await tp.getByRole("button", { name: "Entrar" }).click();
+  await tp.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(tp.getByRole("heading", { name: "Código do aplicativo" })).toBeVisible();
   await tp.getByRole("button", { name: /usar código de recuperação/ }).click();
   await tp.getByLabel("Código de recuperação").fill(codes[0]);
-  await tp.getByRole("button", { name: "Entrar" }).click();
+  await tp.getByRole("button", { name: "Entrar", exact: true }).click();
   await tp.waitForURL("**/passageiro");
   const fourth = await browser.newContext({ baseURL: BASE });
   await fourth.request.post("/api/auth/login", { data: { identifier: phone, password: "senha-de-teste" } });
@@ -137,9 +139,8 @@ test("verificação em duas etapas: ativar, entrar com código, recuperação e 
 });
 
 test("documento disfarçado de foto é recusado", async () => {
-  const c = await apiClient();
-  const id = Date.now().toString(36);
-  expect((await c.post("/api/auth/register", { data: { name: "Davi Teste Arquivo", email: `arq${id}@e2e.prumo.test`, password: "senha-de-teste", role: "driver", acceptPrivacy: true } })).ok()).toBeTruthy();
+  // Conta de passageiro que virou motorista: só então envia documentos.
+  const { c } = await driverAccountApi();
   const fake = await c.post("/api/driver/documents", { multipart: { kind: "cnh", file: { name: "foto.png", mimeType: "image/png", buffer: Buffer.from("<html><script>alert(1)</script></html>") } } });
   expect(fake.status()).toBe(400);
   const real = await c.post("/api/driver/documents", { multipart: { kind: "cnh", file: { name: "foto.png", mimeType: "image/png", buffer: PNG } } });

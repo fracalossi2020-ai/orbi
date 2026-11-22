@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { adminApi, apiClient, approvedDriverApi, BASE, DRIVER_ADDRESS, DRIVER_REG, VEHICLE_REG, lastCode, login, makeCnh, makeCpf, passengerApi, RIDE_BODY, signUp, unique, uniquePhone } from "./helpers";
+import { PASSWORD, TEST_PIX, openTrip, adminApi, advance, apiClient, approvedDriverApi, BASE, driveRide, RIDE_DEST, RIDE_ORIGIN, chooseEntry, DRIVER_ADDRESS, ownAddress, DRIVER_REG, VEHICLE_REG, lastCode, login, makeCnh, passengerApi, registerApi, RIDE_BODY, signUp, unique, uniquePhone, validCpf } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -25,10 +25,16 @@ test("controle de acesso por perfil", async () => {
   expect((await at.post("/api/admin/staff", { data: { name: "Invasor", email: `x${unique()}@e2e.prumo.test`, password: "senha-qualquer-1", role: "admin" } })).status()).toBe(403);
 });
 
-test("cadastro público não cria administrador", async () => {
-  const c = await apiClient();
-  const res = await c.post("/api/auth/register", { data: { name: "Falso Admin", email: `f${unique()}@e2e.prumo.test`, password: "senha-de-teste", role: "admin", acceptPrivacy: true } });
-  expect(res.status()).toBe(400);
+test("cadastro público não cria administrador nem motorista", async () => {
+  // O papel no corpo não vale: ou o cadastro é recusado, ou a conta nasce passageiro.
+  for (const role of ["admin", "driver"]) {
+    const c = await apiClient();
+    const res = await c.post("/api/auth/register", { data: { name: "Falso Papel", email: `f${unique()}@e2e.prumo.test`, password: "senha-de-teste", cpf: validCpf(), role, acceptPrivacy: true } });
+    if (res.ok()) expect((await res.json()).role).toBe("passenger");
+    else expect(res.status()).toBe(400);
+    expect((await c.get("/api/admin/dashboard")).status()).not.toBe(200);
+    expect((await c.get("/api/driver/state")).status()).not.toBe(200);
+  }
 });
 
 test("pagamento indisponível é recusado no servidor", async () => {
@@ -115,7 +121,7 @@ test("tarifa e cupom configurados no painel valem na corrida; cupom não reduz o
   expect(offer.driverNetCents).toBe(offer.grossCents - Math.round(offer.grossCents * 0.1));
 
   expect((await d.c.post(`/api/driver/offers/${offer.id}`, { data: { accept: true } })).ok()).toBeTruthy();
-  for (const a of ["arrive", "start", "complete"]) expect((await d.c.post(`/api/rides/${ride.id}/${a}`, { data: {} })).ok()).toBeTruthy();
+  await driveRide(d.c, ride.id);
 
   // Encerrar de novo não duplica lançamento
   expect((await d.c.post(`/api/rides/${ride.id}/complete`, { data: {} })).status()).toBe(409);
@@ -125,8 +131,16 @@ test("tarifa e cupom configurados no painel valem na corrida; cupom não reduz o
   expect(fin.balanceCents).toBe(offer.driverNetCents - ride.totalCents);
   expect(fin.summary.netCents).toBe(offer.driverNetCents);
 
-  // Saque além do saldo é recusado
-  expect((await d.c.post("/api/driver/withdrawals", { data: { amountCents: 5000, pixKey: "teste@e2e.prumo.test" } })).status()).toBe(409);
+  // Saque: sem chave Pix no perfil, sem senha, com senha errada ou para outra chave é recusado (400/409); além do saldo, 409
+  expect((await d.c.post("/api/driver/withdrawals", { data: { amountCents: 5000, password: PASSWORD } })).status()).toBe(409);
+  expect((await d.c.post("/api/driver/payment-prefs", { data: { ...TEST_PIX, cardMachine: false } })).status()).toBe(400);
+  expect((await d.c.post("/api/driver/payment-prefs", { data: { ...TEST_PIX, cardMachine: false, password: "senha-errada-123" } })).status()).toBe(400);
+  expect((await d.c.post("/api/driver/payment-prefs", { data: { ...TEST_PIX, cardMachine: false, password: PASSWORD } })).ok()).toBeTruthy();
+  expect((await d.c.post("/api/driver/withdrawals", { data: { amountCents: 5000 } })).status()).toBe(400);
+  expect((await d.c.post("/api/driver/withdrawals", { data: { amountCents: 5000, password: "senha-errada-123" } })).status()).toBe(400);
+  expect((await d.c.post("/api/driver/withdrawals", { data: { amountCents: 5000, password: PASSWORD, pixKey: "outra@chave.com" } })).status()).toBe(400);
+  expect((await d.c.post("/api/driver/withdrawals", { data: { amountCents: 5000, password: PASSWORD, pixKey: "(31) 99999-8888" } })).status()).toBe(409);
+  expect((await d.c.post("/api/driver/withdrawals", { data: { amountCents: 5000, password: PASSWORD } })).status()).toBe(409);
 
   // Avaliar duas vezes é recusado
   expect((await p.post(`/api/rides/${ride.id}/rate`, { data: { stars: 5 } })).ok()).toBeTruthy();
@@ -140,9 +154,22 @@ test("LGPD: exportar e excluir conta anonimiza os dados", async () => {
   const data = await (await p.get("/api/me/export")).json();
   expect(data.profile.email).toContain("@");
   expect(data.profile.passwordHash).toBeUndefined();
-  expect((await p.delete("/api/me")).ok()).toBeTruthy();
+  // Excluir pede a senha de novo
+  expect((await p.delete("/api/me", { data: {} })).status()).toBe(400);
+  expect((await p.delete("/api/me", { data: { password: "senha-errada-123" } })).status()).toBe(400);
+  expect((await p.delete("/api/me", { data: { password: PASSWORD } })).ok()).toBeTruthy();
   const after = await (await p.get("/api/me")).json();
   expect(after.user).toBeNull();
+});
+
+test("LGPD: motorista exclui a conta (chave Pix, placa, chamados e chat saem) e perde a sessão", async () => {
+  const admin = await adminApi();
+  const d = await approvedDriverApi(admin);
+  expect((await d.c.post("/api/driver/payment-prefs", { data: { ...TEST_PIX, cardMachine: false, password: PASSWORD } })).ok()).toBeTruthy();
+  expect((await d.c.post("/api/account/tickets", { data: { kind: "ajuda", subject: "Preciso de ajuda", body: "Meu CPF é 000 e moro na rua tal" } })).ok()).toBeTruthy();
+  await d.c.post("/api/driver/status", { data: { online: false } });
+  expect((await d.c.delete("/api/me", { data: { password: PASSWORD } })).ok()).toBeTruthy();
+  expect((await (await d.c.get("/api/me")).json()).user).toBeNull();
 });
 
 test("documento só é acessível à equipe", async () => {
@@ -171,26 +198,32 @@ test("entrada única: mesma tela cria conta, reconhece quem voltou e o botão vo
   const page = await ctx.newPage();
   const phone = uniquePhone();
 
+  await ownAddress(page);
   await page.goto("/entrar");
+  await chooseEntry(page, "celular");
   await page.getByLabel("Celular com DDD").fill(`0${phone}`);
   await expect(page.getByLabel("Celular com DDD")).toHaveValue(`(${phone.slice(0, 2)}) ${phone.slice(2, 7)}-${phone.slice(7)}`);
-  await page.getByRole("button", { name: "Continuar" }).click();
-  await expect(page.getByRole("heading", { name: "Como você vai usar a Orbi?" })).toBeVisible();
+  await advance(page);
+  // Conta nova: não pergunta mais o perfil, vai direto ao nome (toda conta nasce passageiro)
+  await expect(page.getByLabel("Nome completo")).toBeVisible();
+  await expect(page.getByText("Como você vai usar a Orbi?")).toHaveCount(0);
   await page.goBack();
-  await expect(page.getByRole("heading", { name: "Qual é o seu celular?" })).toBeVisible();
-  await page.getByRole("button", { name: "Continuar" }).click();
-  await page.getByRole("button", { name: "Quero viajar" }).click();
+  await expect(page.getByLabel("Celular com DDD")).toBeVisible();
+  await advance(page);
   await page.getByLabel("Nome completo").fill("Pessoa de Teste");
-  await page.getByRole("button", { name: "Continuar" }).click();
+  await advance(page);
+  await page.getByLabel("CPF").fill(validCpf());
+  await advance(page);
   const contact = `c${phone}@e2e.prumo.test`;
   await page.getByLabel("E-mail de contato").fill(contact);
-  await page.getByRole("button", { name: "Continuar" }).click();
+  await advance(page);
   await page.getByLabel("Nova senha").fill("senha-de-teste");
   await page.getByRole("button", { name: "Criar conta" }).click();
   await expect(page.getByText("Aceite os termos e a política")).toBeVisible();
   await page.locator('input[name="accept"]').check();
   await page.getByRole("button", { name: "Criar conta" }).click();
   await page.waitForURL("**/passageiro");
+  await openTrip(page);
 
   // Sem permissão ainda: explica o motivo antes do pedido do sistema
   await expect(page.getByRole("heading", { name: "Use sua localização" })).toBeVisible();
@@ -213,8 +246,9 @@ test("entrada única: mesma tela cria conta, reconhece quem voltou e o botão vo
   // Esqueci a senha: código no e-mail da conta, nova senha e entrada direta
   await ctx.clearCookies();
   await page.goto("/entrar");
+  await chooseEntry(page, "celular");
   await page.getByLabel("Celular com DDD").fill(phone);
-  await page.getByRole("button", { name: "Continuar" }).click();
+  await advance(page);
   await page.getByRole("button", { name: "Esqueci minha senha" }).click();
   await expect(page.getByText(/Enviamos um código/)).toContainText("@e2e.prumo.test");
   await page.getByLabel("Código").fill("000000");
@@ -236,18 +270,26 @@ test("entrada única: mesma tela cria conta, reconhece quem voltou e o botão vo
 
 test("dados inválidos ou duplicados são recusados no servidor", async () => {
   const c = await apiClient();
-  const signup = (data: object) => c.post("/api/auth/register", { data: { name: "Pessoa de Teste", password: "senha-de-teste", role: "driver", acceptPrivacy: true, ...data } });
+  const signup = (data: object) => c.post("/api/auth/register", { data: { name: "Pessoa de Teste", password: "senha-de-teste", cpf: validCpf(), acceptPrivacy: true, ...data } });
   expect((await signup({ phone: "31888887777" })).status()).toBe(400); // sem o 9
   expect((await signup({ phone: "20999998888" })).status()).toBe(400); // DDD inexistente
   expect((await signup({ phone: "31999999999" })).status()).toBe(400); // sequência repetida
   expect((await signup({ phone: uniquePhone(), name: "Pessoa" })).status()).toBe(400); // sem sobrenome
   expect((await c.post("/api/auth/lookup", { data: { identifier: "12345" } })).status()).toBe(400);
 
+  expect((await signup({ phone: uniquePhone(), cpf: undefined })).status()).toBe(400); // sem CPF
+  expect((await signup({ phone: uniquePhone(), cpf: "12345678900" })).status()).toBe(400); // dígitos verificadores errados
+  expect((await signup({ phone: uniquePhone(), cpf: "11111111111" })).status()).toBe(400); // números repetidos
+
   const phone = uniquePhone();
-  expect((await signup({ phone })).ok()).toBeTruthy();
+  const cpf = validCpf();
+  expect((await signup({ phone, cpf })).ok()).toBeTruthy();
   expect((await signup({ phone })).status()).toBe(409);
+  // A conta nasce passageiro; o cadastro de motorista começa quando a pessoa pede, já com o CPF da conta.
+  expect((await c.get("/api/driver/state")).status()).toBe(403);
+  expect((await c.post("/api/account/become-driver", { data: {} })).ok()).toBeTruthy();
   const { regions } = await (await c.get("/api/driver/state")).json();
-  const good = { cpf: makeCpf(), cnh: makeCnh(), regionId: regions[0].id, ...DRIVER_ADDRESS, ...DRIVER_REG };
+  const good = { cpf, cnh: makeCnh(), regionId: regions[0].id, ...DRIVER_ADDRESS, ...DRIVER_REG };
   const onboard = (over: object) => c.post("/api/driver/onboarding", { data: { ...good, ...over } });
   expect((await onboard({ cpf: "00000000000" })).status()).toBe(400);
   expect((await onboard({ cpf: "12345678900" })).status()).toBe(400);
@@ -270,9 +312,11 @@ test("dados inválidos ou duplicados são recusados no servidor", async () => {
   expect((await onboard({})).ok()).toBeTruthy();
 
   const other = await apiClient();
-  expect((await other.post("/api/auth/register", { data: { name: "Outra Pessoa", phone: uniquePhone(), password: "senha-de-teste", role: "driver", acceptPrivacy: true } })).ok()).toBeTruthy();
+  expect((await other.post("/api/auth/register", { data: { name: "Outra Pessoa", phone: uniquePhone(), password: "senha-de-teste", cpf: validCpf(), acceptPrivacy: true } })).ok()).toBeTruthy();
+  expect((await other.post("/api/account/become-driver", { data: {} })).ok()).toBeTruthy();
+  // CPF de outra pessoa no cadastro de motorista é recusado
   const dup = await other.post("/api/driver/onboarding", { data: { ...good, cnh: makeCnh() } });
-  expect(dup.status()).toBe(409);
+  expect([400, 409]).toContain(dup.status());
   expect((await dup.json()).error).toContain("CPF");
   // Carro: sem ar-condicionado, velho demais ou de 2 portas é recusado.
   const cats = (await (await c.get("/api/driver/state")).json()).categories;
@@ -282,7 +326,7 @@ test("dados inválidos ou duplicados são recusados no servidor", async () => {
   expect((await (await c.post("/api/driver/vehicle", { data: { ...car, doors: 2 } })).json()).error).toContain("portas");
 });
 
-test("tema: o servidor entrega a escolha pronta, o aparelho vale sem escolha e o botão guarda a preferência", async ({ browser }) => {
+test("tema: o servidor entrega a escolha pronta, sem escolha o app é claro e o botão guarda a preferência", async ({ browser }) => {
   // Sem script na página: a escolha vem num cookie e o servidor já escreve data-theme no <html>.
   const c = await apiClient();
   const html = async (cookie?: string) => (await (await c.get("/", { headers: cookie ? { cookie } : {} })).text());
@@ -293,7 +337,7 @@ test("tema: o servidor entrega a escolha pronta, o aparelho vale sem escolha e o
   expect(none).not.toContain("localStorage.getItem(\"prumo-theme\")");
 
   const bg = (page: import("@playwright/test").Page) => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  const LIGHT = "rgb(245, 247, 250)"; // #F5F7FA, fundo claro dos apps
+  const LIGHT = "rgb(255, 255, 255)"; // fundo claro dos apps, igual ao site
   const SITE = "rgb(255, 255, 255)"; // o site público é sempre branco, qualquer que seja o tema
 
   // O site não segue o tema: branco no aparelho escuro e sem botão de tema
@@ -303,25 +347,201 @@ test("tema: o servidor entrega a escolha pronta, o aparelho vale sem escolha e o
   expect(await bg(pd)).toBe(SITE);
   await expect(pd.getByRole("button", { name: /Usar modo (claro|escuro)/ })).toHaveCount(0);
 
-  // Nos apps, sem escolha salva, o tema do aparelho decide; o botão grava a escolha em cookie e ela sobrevive a recarregar
+  // Nos apps, sem escolha salva, o tema é claro mesmo no aparelho escuro; o botão grava a escolha em cookie e ela sobrevive a recarregar
   await signUp(pd, "passageiro", uniquePhone(), "Tema Escuro Teste");
   await pd.waitForURL(/passageiro/);
+  expect(await bg(pd)).toBe(LIGHT);
+  await pd.getByRole("button", { name: "Usar modo escuro" }).first().click();
+  expect(await bg(pd)).not.toBe(LIGHT);
+  expect((await dark.cookies()).find((k) => k.name === "prumo-theme")?.value).toBe("dark");
+  await pd.reload();
   expect(await bg(pd)).not.toBe(LIGHT);
   await pd.getByRole("button", { name: "Usar modo claro" }).first().click();
   expect(await bg(pd)).toBe(LIGHT);
-  expect((await dark.cookies()).find((k) => k.name === "prumo-theme")?.value).toBe("light");
   await pd.reload();
   expect(await bg(pd)).toBe(LIGHT);
   await dark.close();
+});
 
-  const light = await browser.newContext({ baseURL: BASE, colorScheme: "light" });
-  const pl = await light.newPage();
-  await signUp(pl, "passageiro", uniquePhone(), "Tema Claro Teste");
-  await pl.waitForURL(/passageiro/);
-  expect(await bg(pl)).toBe(LIGHT);
-  await pl.getByRole("button", { name: "Usar modo escuro" }).first().click();
-  expect(await bg(pl)).not.toBe(LIGHT);
-  await pl.reload();
-  expect(await bg(pl)).not.toBe(LIGHT);
-  await light.close();
+test("posição e foto do motorista só aparecem enquanto a corrida está ativa", async () => {
+  const admin = await adminApi();
+  const d = await approvedDriverApi(admin);
+  const p = await passengerApi();
+  const ride = await (await p.post("/api/rides", { data: RIDE_BODY(d.categoryId) })).json();
+  const offer = (await (await d.c.get("/api/driver/state")).json()).offer;
+  expect((await d.c.post(`/api/driver/offers/${offer.id}`, { data: { accept: true } })).ok()).toBeTruthy();
+  expect((await d.c.post("/api/driver/location", { data: { lat: -19.47, lng: -42.54, heading: 90, accuracy: 8 } })).ok()).toBeTruthy();
+
+  const live = await (await p.get(`/api/rides/${ride.id}`)).json();
+  expect(live.driver.lat).not.toBeNull();
+  expect((await p.get(`/api/rides/${ride.id}/driver-photo`)).status()).toBe(200);
+
+  await driveRide(d.c, ride.id);
+  const done = await (await p.get(`/api/rides/${ride.id}`)).json();
+  for (const k of ["lat", "lng", "heading", "accuracyM", "locationAt"]) expect(done.driver[k], k).toBeNull();
+  const history = await (await p.get("/api/rides")).json();
+  const inHistory = JSON.stringify(history);
+  expect(inHistory).not.toContain('"accuracyM":8');
+  expect((await p.get(`/api/rides/${ride.id}/driver-photo`)).status()).toBe(404);
+  await d.c.post("/api/driver/status", { data: { online: false } });
+});
+
+test("troca de e-mail: fica pendente, pede a senha e só vale com o código do e-mail novo", async () => {
+  const { c } = await registerApi("Passageiro");
+  const before = (await (await c.get("/api/me")).json()).user.email as string;
+  const novo = `novo${unique()}@e2e.prumo.test`;
+
+  expect((await c.post("/api/auth/email-send", { data: { email: novo } })).status()).toBe(400);
+  expect((await c.post("/api/auth/email-send", { data: { email: novo, password: "senha-errada-1" } })).status()).toBe(400);
+  expect((await c.post("/api/auth/email-send", { data: { email: novo, password: "senha-de-teste" } })).ok()).toBeTruthy();
+
+  const pending = (await (await c.get("/api/me")).json()).user;
+  expect(pending.email).toBe(before);
+  expect(pending.pendingEmail).toBe(novo);
+
+  // Esqueci a senha continua indo para o e-mail confirmado da conta, nunca para o pendente
+  const anon = await apiClient();
+  const reset = await (await anon.post("/api/auth/reset-request", { data: { identifier: before } })).json();
+  expect(reset.sentTo).toBeTruthy();
+
+  expect((await c.post("/api/auth/email-confirm", { data: { code: "000000" } })).status()).toBe(400);
+  expect((await c.post("/api/auth/email-confirm", { data: { code: lastCode(novo) } })).ok()).toBeTruthy();
+  const after = (await (await c.get("/api/me")).json()).user;
+  expect(after.email).toBe(novo);
+  expect(after.pendingEmail).toBeNull();
+  expect(after.emailVerified).toBe(true);
+});
+
+test("saques simultâneos não gastam o mesmo saldo; saque com saldo negativo não é pago", async () => {
+  const admin = await adminApi();
+  const d = await approvedDriverApi(admin);
+  const p = await passengerApi();
+  const completeCash = async () => {
+    // Motoristas de outros cenários podem seguir online: a oferta passa por eles antes (cada um tem o tempo da oferta), então espera.
+    await d.c.post("/api/driver/location", { data: { lat: -19.47, lng: -42.54 } });
+    const ride = await (await p.post("/api/rides", { data: RIDE_BODY(d.categoryId) })).json();
+    let offer: { id: string } | null = null;
+    for (let i = 0; i < 40 && !offer; i++) {
+      offer = (await (await d.c.get("/api/driver/state")).json()).offer;
+      if (!offer) await new Promise((r) => setTimeout(r, 2000));
+    }
+    expect(offer, "a oferta chegou ao motorista do teste").not.toBeNull();
+    expect((await d.c.post(`/api/driver/offers/${offer!.id}`, { data: { accept: true } })).ok()).toBeTruthy();
+    await driveRide(d.c, ride.id);
+  };
+
+  // Um bônus por corrida deixa o saldo positivo
+  const camp = await admin.post("/api/admin/r/campaigns", { data: { name: `Bônus ${unique()}`, audience: "driver", kind: "bonus", bonusPerRideCents: 20000, active: true } });
+  expect(camp.ok(), await camp.text()).toBeTruthy();
+  const campId = (await camp.json()).id as string;
+  await completeCash();
+  expect((await admin.patch(`/api/admin/r/campaigns/${campId}`, { data: { active: false } })).ok()).toBeTruthy();
+
+  const balance = (await (await d.c.get("/api/driver/finance?period=day")).json()).balanceCents as number;
+  expect(balance).toBeGreaterThan(5000);
+  expect((await d.c.post("/api/driver/payment-prefs", { data: { ...TEST_PIX, cardMachine: false, password: PASSWORD } })).ok()).toBeTruthy();
+  const results = await Promise.all(Array.from({ length: 6 }, () => d.c.post("/api/driver/withdrawals", { data: { amountCents: balance, password: PASSWORD } })));
+  const statuses = results.map((r) => r.status());
+  expect(statuses.filter((s) => s === 200).length, statuses.join(",")).toBe(1);
+  expect(statuses.filter((s) => s === 409).length).toBe(5);
+  expect((await (await d.c.get("/api/driver/finance?period=day")).json()).balanceCents).toBe(0);
+
+  // Nova corrida em dinheiro, já sem bônus: o saldo fica negativo e o admin não paga o saque
+  await completeCash();
+  expect((await (await d.c.get("/api/driver/finance?period=day")).json()).balanceCents).toBeLessThan(0);
+  const withdrawals = (await (await admin.get("/api/admin/payments")).json()).withdrawals as { id: string; driverId: string; status: string }[];
+  const mine = withdrawals.find((w) => w.driverId === d.userId && w.status === "requested")!;
+  expect((await admin.post(`/api/admin/withdrawals/${mine.id}`, { data: { status: "paid" } })).status()).toBe(409);
+  expect((await admin.post(`/api/admin/withdrawals/${mine.id}`, { data: { status: "rejected" } })).ok()).toBeTruthy();
+  await d.c.post("/api/driver/status", { data: { online: false } });
+});
+
+
+test("cheguei e encerrar só valem com o motorista no lugar certo", async () => {
+  const admin = await adminApi();
+  const d = await approvedDriverApi(admin);
+  const p = await passengerApi();
+  const ride = await (await p.post("/api/rides", { data: RIDE_BODY(d.categoryId) })).json();
+  const offer = (await (await d.c.get("/api/driver/state")).json()).offer;
+  expect((await d.c.post(`/api/driver/offers/${offer.id}`, { data: { accept: true } })).ok()).toBeTruthy();
+  // Longe da partida (cerca de 11 km): recusa com a distância
+  await d.c.post("/api/driver/location", { data: RIDE_DEST });
+  const far = await d.c.post(`/api/rides/${ride.id}/arrive`, { data: {} });
+  expect(far.status()).toBe(409);
+  expect((await far.json()).error).toMatch(/do ponto de partida/);
+  await driveRide(d.c, ride.id, ["arrive", "start"]);
+  // Em viagem, mas ainda na partida: não encerra
+  await d.c.post("/api/driver/location", { data: RIDE_ORIGIN });
+  const early = await d.c.post(`/api/rides/${ride.id}/complete`, { data: {} });
+  expect(early.status()).toBe(409);
+  expect((await early.json()).error).toMatch(/do destino/);
+  await driveRide(d.c, ride.id, ["complete"]);
+});
+
+test("cupom vale uma vez por conta e esgota no pedido; avaliação não conta duas vezes", async () => {
+  const admin = await adminApi();
+  const d = await approvedDriverApi(admin);
+  const p = await passengerApi();
+  const code = `U${unique()}`.toUpperCase();
+  const created = await admin.post("/api/admin/r/coupons", { data: { code, kind: "fixed", value: 100, maxUses: 1, active: true } });
+  expect(created.ok()).toBeTruthy();
+  const first = await (await p.post("/api/rides", { data: RIDE_BODY(d.categoryId, { couponCode: code }) })).json();
+  expect(first.discountCents).toBe(100);
+  // O uso foi reservado no pedido, antes de concluir: outro pedido já não o encontra
+  const other = await passengerApi();
+  const exhausted = await (await other.post("/api/rides", { data: RIDE_BODY(d.categoryId, { couponCode: code }) })).json();
+  expect(exhausted.discountCents).toBe(0);
+  expect((await other.post(`/api/rides/${exhausted.id}/cancel`, { data: { reason: "teste" } })).ok()).toBeTruthy();
+  // Cancelar devolve o uso
+  expect((await p.post(`/api/rides/${first.id}/cancel`, { data: { reason: "teste" } })).ok()).toBeTruthy();
+  const again = await other.post("/api/rides", { data: RIDE_BODY(d.categoryId, { couponCode: code }) });
+  expect(again.ok(), await again.text()).toBeTruthy();
+  const ride = await again.json();
+  expect(ride.discountCents).toBe(100);
+  const offer = (await (await d.c.get("/api/driver/state")).json()).offer;
+  expect((await d.c.post(`/api/driver/offers/${offer.id}`, { data: { accept: true } })).ok()).toBeTruthy();
+  await driveRide(d.c, ride.id);
+  const rates = await Promise.all([1, 2].map(() => other.post(`/api/rides/${ride.id}/rate`, { data: { stars: 5 } })));
+  expect(rates.filter((r) => r.ok()).length).toBe(1);
+  // A nota recebida como motorista fica em drivers (a de passageiro, em users): /api/driver/state mostra a do motorista.
+  const state = await (await d.c.get("/api/driver/state")).json();
+  expect(state.ratingCount).toBe(1);
+  expect(state.rating).toBe(5);
+  expect((await (await d.c.get("/api/me")).json()).user.ratingCount).toBe(0);
+});
+
+test("ids que não são UUID dão 404; chamado só aponta para corrida da própria pessoa", async () => {
+  const admin = await adminApi();
+  const d = await approvedDriverApi(admin);
+  const p = await passengerApi();
+  expect((await p.get("/api/rides/nao-e-uuid")).status()).toBe(404);
+  expect((await admin.post("/api/admin/users/nao-e-uuid", { data: { status: "active" } })).status()).toBe(404);
+  expect((await admin.patch("/api/admin/r/coupons/nao-e-uuid", { data: { active: false } })).status()).toBe(404);
+  const ride = await (await p.post("/api/rides", { data: RIDE_BODY(d.categoryId) })).json();
+  const stranger = await passengerApi();
+  const ticket = (rideId: string) => ({ kind: "ajuda", subject: "Assunto teste", body: "Conteúdo do chamado", rideId });
+  expect((await stranger.post("/api/account/tickets", { data: ticket(ride.id) })).status()).toBe(404);
+  expect((await p.post("/api/account/tickets", { data: ticket(ride.id) })).ok()).toBeTruthy();
+  await p.post(`/api/rides/${ride.id}/cancel`, { data: { reason: "teste" } });
+});
+
+test("a cópia dos dados do motorista não leva dados do passageiro; lista da equipe sem segredos", async () => {
+  const admin = await adminApi();
+  const d = await approvedDriverApi(admin);
+  const p = await passengerApi();
+  const ride = await (await p.post("/api/rides", { data: RIDE_BODY(d.categoryId, { rider: { name: "Joana Teste Convidada", phone: "31988887777" } }) })).json();
+  // Motoristas de outros cenários podem seguir online: a oferta passa por eles antes, então espera.
+  let offer: { id: string } | null = null;
+  for (let i = 0; i < 40 && !offer; i++) {
+    offer = (await (await d.c.get("/api/driver/state")).json()).offer;
+    if (!offer) await new Promise((r) => setTimeout(r, 2000));
+  }
+  expect(offer, "a oferta chegou ao motorista do teste").not.toBeNull();
+  expect((await d.c.post(`/api/driver/offers/${offer!.id}`, { data: { accept: true } })).ok()).toBeTruthy();
+  await driveRide(d.c, ride.id);
+  const exported = JSON.stringify(await (await d.c.get("/api/me/export")).json());
+  expect(exported).not.toContain("Joana Teste Convidada");
+  expect(exported).not.toContain("31988887777");
+  const users = (await (await admin.get("/api/admin/users")).json()).rows as Record<string, unknown>[];
+  for (const u of users) for (const k of ["passwordHash", "totpSecret", "recoveryCodes", "googleSub", "pendingEmail"]) expect(u, k).not.toHaveProperty(k);
 });

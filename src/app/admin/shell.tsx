@@ -2,11 +2,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, useContext, useState } from "react";
-import { Logo } from "@/components/Logo";
-import { Icon } from "@/components/Icon";
-import { api, ThemeToggle } from "@/components/ui";
-import { can, type Resource, type Role } from "@/domain/permissions";
-import { MfaSetup } from "@/components/app/SecurityPanel";
+import { Logo } from "@/frontend/components/Logo";
+import { Icon } from "@/frontend/components/Icon";
+import { api, ThemeToggle } from "@/frontend/components/ui";
+import { can, type Resource, type Role } from "@/shared/permissions";
+import { MfaSetup } from "@/frontend/components/app/SecurityPanel";
 
 export const ADMIN_NAV: { href: string; label: string; icon: string; res: Resource; group: string }[] = [
   { href: "/admin", label: "Indicadores", icon: "chart", res: "dashboard", group: "Operação" },
@@ -14,6 +14,7 @@ export const ADMIN_NAV: { href: string; label: string; icon: string; res: Resour
   { href: "/admin/veiculos", label: "Veículos", icon: "shield", res: "vehicles", group: "Operação" },
   { href: "/admin/usuarios", label: "Usuários", icon: "users", res: "users", group: "Operação" },
   { href: "/admin/viagens", label: "Viagens", icon: "route", res: "rides", group: "Operação" },
+  { href: "/admin/emergencias", label: "Emergências", icon: "sos", res: "tickets", group: "Operação" },
   { href: "/admin/chamados", label: "Chamados", icon: "help", res: "tickets", group: "Operação" },
   { href: "/admin/pagamentos", label: "Pagamentos", icon: "wallet", res: "payments", group: "Financeiro" },
   { href: "/admin/relatorios", label: "Relatórios", icon: "receipt", res: "reports", group: "Financeiro" },

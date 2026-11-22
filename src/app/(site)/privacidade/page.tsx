@@ -1,5 +1,5 @@
-import { Body, Legal, PageHead } from "@/components/site/Page";
-import { Note } from "@/components/ui";
+import { Body, Legal, PageHead } from "@/frontend/components/site/Page";
+import { Note } from "@/frontend/components/ui";
 
 export const metadata = { title: "Política de privacidade" };
 
@@ -30,6 +30,7 @@ export default function Privacidade() {
           <p>Quem recebe o link vê o trajeto, o primeiro nome do motorista e o veículo enquanto a viagem durar. Ao fim da corrida, o link deixa de mostrar essas informações.</p>
           <h2>Seus direitos</h2>
           <p>No aplicativo, em Conta, você pode baixar uma cópia dos seus dados ou excluir sua conta. Na exclusão, seus dados pessoais são anonimizados. Registros financeiros e de viagem ficam retidos sem identificação pelo prazo exigido em lei.</p>
+          <p>Se você teve cadastro de motorista com histórico de corridas ou de saldo, guardamos apenas um resumo irreversível (hash) do seu CPF por 180 dias, sem guardar o número. Nesse período, esse CPF não pode se cadastrar de novo como motorista, para que a exclusão não apague o rastro do cadastro. Esse bloqueio não vale para passageiros: quem só viajou como passageiro pode excluir a conta e se cadastrar de novo quando quiser. Se achar que o bloqueio é um engano, fale com o suporte.</p>
           <h2>Segurança</h2>
           <p>Documentos ficam em área privada e só a equipe autorizada acessa. Todo acesso administrativo a documentos fica registrado em histórico de atividades.</p>
         </Legal>

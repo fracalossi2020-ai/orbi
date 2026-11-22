@@ -1,14 +1,17 @@
 "use client";
-import { MapView } from "@/components/LazyMap";
+import Link from "next/link";
+import { MapView } from "@/frontend/components/LazyMap";
 import { useEffect, useRef, useState } from "react";
-import { Icon } from "@/components/Icon";
-import { PageTitle } from "@/components/app/AppShell";
-import { RideChat, type Message } from "@/components/app/RideChat";
-import { api, Badge, ErrorNote, Field, km, METHOD_LABEL, mins, Note, pct, Spinner, Stars, useAction, useLive } from "@/components/ui";
-import { brl } from "@/domain/pricing";
-import { isDirect, METHOD_INFO, type PaymentMethod } from "@/domain/payment-methods";
-import { CNH_CATEGORIES, DOC_INFO, type DriverRules } from "@/domain/driver-rules";
-import { permissionHelp, useDriverGps } from "@/components/app/useDriverGps";
+import { Icon } from "@/frontend/components/Icon";
+import { MotoSoon } from "@/frontend/components/MotoSoon";
+import { EmergencySheet } from "@/frontend/components/app/EmergencySheet";
+import { PageTitle } from "@/frontend/components/app/AppShell";
+import { RideChat, type Message } from "@/frontend/components/app/RideChat";
+import { api, Badge, ErrorNote, Field, km, METHOD_LABEL, mins, Note, pct, Spinner, Stars, useAction, useLive } from "@/frontend/components/ui";
+import { brl } from "@/shared/pricing";
+import { isDirect, METHOD_INFO, type PaymentMethod } from "@/shared/payment-methods";
+import { CNH_CATEGORIES, DOC_INFO, type DriverRules } from "@/shared/driver-rules";
+import { permissionHelp, useDriverGps } from "@/frontend/components/app/useDriverGps";
 
 
 type Place = { label: string; lat: number; lng: number };
@@ -20,6 +23,7 @@ type Ride = {
   id: string; status: string; statusLabel: string; origin: Place; dest: Place; stops: Place[]; geometry: [number, number][]; distanceM: number; paymentMethod: string; totalCents: number; grossCents: number; commissionBps: number; commissionCents: number; driverNetCents: number;
   passenger: { name: string; rating: number | null; ratingCount: number }; messages: Message[]; myRating: number | null; paymentStatus: string;
   rider: { name: string; phone: string | null } | null;
+  vehicle: { make: string; model: string; color: string; plate: string } | null;
 };
 type State = {
   driver: { status: string; online: boolean; reviewNote: string | null; lat: number | null; lng: number | null; pixKey: string | null; cardMachine: boolean } | null;
@@ -28,7 +32,12 @@ type State = {
   docs: { id: string; kind: string; status: string; reviewNote: string | null }[]; vehicles: { id: string; categoryId: string; make: string; model: string; plate: string; status: string }[];
   categories: { id: string; name: string; description: string; modalityId: string }[]; regions: { id: string; name: string }[];
   offer: Offer | null; ride: Ride | null; balanceCents: number; manualLocationAllowed: boolean; rating: number | null; ratingCount: number;
+  /** CPF informado no cadastro da conta (só dígitos); contas antigas não têm. */
+  userCpf?: string | null;
 };
+
+/** 12345678909 → 123.456.789-09. */
+const formatCpf = (d: string) => d.replace(/\D/g, "").slice(0, 11).replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
 
 /** Ajuda curta ao lado de uma pergunta do cadastro. */
 function Help({ children }: { children: React.ReactNode }) {
@@ -39,7 +48,9 @@ const STATUS: Record<string, [string, "warn" | "ok" | "danger"]> = { pending: ["
 function Onboarding({ state, reload }: { state: State; reload: () => void }) {
   const rules = state.driverRules;
   const DOCS_BASE = rules.requiredDocs.map((kind) => ({ kind, ...DOC_INFO[kind] }));
-  const [f, setF] = useState({ cpf: "", cnh: "", regionId: state.regions[0]?.id ?? "", cep: "", street: "", number: "", complement: "", district: "", city: "", state: "" });
+  // O CPF vem da conta quando já foi informado no cadastro: aqui só confirma, sem digitar de novo.
+  const accountCpf = state.userCpf ? formatCpf(state.userCpf) : "";
+  const [f, setF] = useState({ cpf: accountCpf, cnh: "", regionId: state.regions[0]?.id ?? "", cep: "", street: "", number: "", complement: "", district: "", city: "", state: "" });
   const [reg, setReg] = useState({ birthDate: "", cnhCategory: "B", cnhFirstLicenseAt: "", cnhExpiresAt: "", cnhEar: false, inss: false, acceptTerms: false });
   // null: CEP ainda não consultado; "official": veio da base; "manual": serviço fora do ar.
   const [cepSource, setCepSource] = useState<null | "official" | "manual">(null);
@@ -89,7 +100,7 @@ function Onboarding({ state, reload }: { state: State; reload: () => void }) {
         <form className="card space-y-4 p-5" onSubmit={(e) => { e.preventDefault(); run(async () => { await api("/api/driver/onboarding", { body: { ...f, ...reg } }); reload(); }); }}>
           <h2 className="display text-xl">Seus dados</h2>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="CPF"><input className="input num" name="cpf" inputMode="numeric" required maxLength={14} value={f.cpf} onChange={(e) => setF({ ...f, cpf: e.target.value })} /></Field>
+            <Field label="CPF"><input className={`input num ${accountCpf ? "cursor-not-allowed opacity-80" : ""}`} name="cpf" inputMode="numeric" required maxLength={14} readOnly={!!accountCpf} aria-readonly={accountCpf ? true : undefined} value={f.cpf} onChange={(e) => { if (!accountCpf) setF({ ...f, cpf: e.target.value }); }} />{accountCpf && <Help>O CPF da sua conta. Para corrigir, fale com o suporte.</Help>}</Field>
             <Field label="Data de nascimento"><input className="input num" name="birthDate" type="date" required value={reg.birthDate} onChange={(e) => setReg({ ...reg, birthDate: e.target.value })} /></Field>
           </div>
           <h2 className="display pt-2 text-xl">Sua CNH</h2>
@@ -172,6 +183,7 @@ function Onboarding({ state, reload }: { state: State; reload: () => void }) {
         {state.vehicles.map((x) => (
           <p key={x.id} className="mb-2 flex items-center justify-between gap-2"><span>{x.make} {x.model} · <span className="num font-semibold">{x.plate}</span></span><Badge tone={STATUS[x.status][1]}>{STATUS[x.status][0]}</Badge></p>
         ))}
+        {!state.vehicles.length && <div className="mb-4"><MotoSoon account compact /></div>}
         {!state.vehicles.length && (
           <form className="grid gap-3 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); run(async () => { await api("/api/driver/vehicle", { body: { ...v, year: Number(v.year) || undefined, doors: motoChosen ? 0 : Number(v.doors), seats: motoChosen ? 1 : Number(v.seats) } }); reload(); }); }}>
             <p className="text-sm text-muted sm:col-span-2">{motoChosen
@@ -232,22 +244,35 @@ function OfferCard({ offer, reload }: { offer: Offer; reload: () => void }) {
     const t = setInterval(tick, 500);
     return () => clearInterval(t);
   }, [offer.expiresAt]);
+  // Duração total da oferta, guardada na primeira leitura: o anel esvazia a partir dela.
+  const [total] = useState(() => Math.max(1, Math.ceil((new Date(offer.expiresAt).getTime() - Date.now()) / 1000)));
   const respond = (accept: boolean) => run(async () => { await api(`/api/driver/offers/${offer.id}`, { body: { accept } }); reload(); });
   return (
-    <section aria-label="Nova corrida" className="card anim-rise overflow-hidden" data-testid="offer">
-      <MapView className="h-32 md:h-52" ariaLabel="Rota da corrida oferecida" route={offer.geometry} points={[{ id: "o", kind: "origin", lat: offer.origin.lat, lng: offer.origin.lng }, ...offer.stops.map((p, i) => ({ id: `s${i}`, kind: "stop" as const, lat: p.lat, lng: p.lng })), { id: "d", kind: "dest", lat: offer.dest.lat, lng: offer.dest.lng }]} />
+    <section aria-label="Nova corrida" className="anim-rise rounded-[28px] border border-line bg-surface" data-testid="offer">
+      <div className="flex items-center gap-3 rounded-t-[27px] bg-primary px-5 py-3.5 text-white">
+        <Icon name="pin" size={20} />
+        <h2 className="display flex-1 text-xl">Nova corrida</h2>
+        <span className="relative grid size-12 place-items-center" role="timer" aria-label={`${left} segundos para decidir`}>
+          <svg viewBox="0 0 48 48" className="absolute inset-0 size-full -rotate-90" aria-hidden="true">
+            <circle cx="24" cy="24" r="20" fill="none" stroke="rgb(255 255 255 / .25)" strokeWidth="4" />
+            <circle cx="24" cy="24" r="20" fill="none" stroke="#FFFFFF" strokeWidth="4" strokeLinecap="round" pathLength={1} strokeDasharray="1 1" strokeDashoffset={1 - left / total} style={{ transition: "stroke-dashoffset .5s linear" }} />
+          </svg>
+          <span className="num text-sm font-bold">{left}s</span>
+        </span>
+      </div>
+      <MapView className="h-36 md:h-52" ariaLabel="Rota da corrida oferecida" route={offer.geometry} points={[{ id: "o", kind: "origin", lat: offer.origin.lat, lng: offer.origin.lng }, ...offer.stops.map((p, i) => ({ id: `s${i}`, kind: "stop" as const, lat: p.lat, lng: p.lng })), { id: "d", kind: "dest", lat: offer.dest.lat, lng: offer.dest.lng }]} />
       <div className="space-y-3 p-5">
-        <div className="flex items-center justify-between"><h2 className="display text-2xl">Nova corrida</h2><span className="num rounded-full bg-primary px-3 py-1 font-bold text-on-primary" role="timer">{left}s</span></div>
         <p className="num text-sm text-muted">{km(offer.pickupDistanceM)} até o passageiro (~{mins(offer.pickupEtaS)}) · {km(offer.distanceM)} de viagem · {METHOD_LABEL[offer.paymentMethod]}</p>
         <dl className="text-sm"><div className="flex gap-2"><dt className="text-muted">Busca em</dt><dd className="font-medium">{offer.origin.label}</dd></div>{offer.stops.map((p, i) => <div key={i} className="flex gap-2"><dt className="text-muted">Parada {i + 1}</dt><dd className="font-medium">{p.label}</dd></div>)}<div className="flex gap-2"><dt className="text-muted">Leva para</dt><dd className="font-medium">{offer.dest.label}</dd></div></dl>
-        <dl className="space-y-1.5 rounded-2xl bg-surface-2 p-4">
+        <dl className="space-y-1.5 rounded-[22px] bg-surface-2 p-4">
           <div className="flex justify-between"><dt>Valor bruto</dt><dd className="num font-semibold">{brl(offer.grossCents)}</dd></div>
           <div className="flex justify-between text-muted"><dt>Comissão Orbi ({pct(offer.commissionBps)})</dt><dd className="num">− {brl(offer.commissionCents)}</dd></div>
-          <div className="display flex justify-between border-t border-line pt-2 text-2xl"><dt>Você recebe</dt><dd className="num text-brand" data-testid="net">{brl(offer.driverNetCents)}</dd></div>
+          <div className="display flex items-baseline justify-between border-t border-line pt-2 text-2xl"><dt>Você recebe</dt><dd className="num text-[2.2rem] leading-none text-brand" data-testid="net">{brl(offer.driverNetCents)}</dd></div>
         </dl>
         <PayHint method={offer.paymentMethod} totalCents={offer.totalCents} />
         <ErrorNote>{error}</ErrorNote>
-        <div className="grid grid-cols-2 gap-2">
+        {/* Presos no fim da tela, acima do menu: aceitar nunca depende de rolar. */}
+        <div className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-10 -mx-5 -mb-5 grid grid-cols-[1fr_2fr] gap-2 rounded-b-[27px] bg-surface px-5 pt-2 pb-5 md:bottom-0">
           <button type="button" className="btn btn-ghost btn-lg" disabled={busy} onClick={() => respond(false)}>Recusar</button>
           <button type="button" className="btn btn-primary btn-lg" disabled={busy} onClick={() => respond(true)}>Aceitar</button>
         </div>
@@ -263,18 +288,25 @@ const navUrl = (p: Place, app: "google" | "waze", via: Place[] = []) => app === 
 
 function ActiveRide({ ride, reload, position }: { ride: Ride; reload: () => void; position: { lat: number; lng: number } | null }) {
   const { busy, error, run } = useAction();
-  const [alerted, setAlerted] = useState(false);
-  const act = (action: string) => run(async () => { await api(`/api/rides/${ride.id}/${action}`, { body: {} }); reload(); });
+  const [sos, setSos] = useState(false);
+  // Encerrar longe do destino (mais de 500 m): o servidor pede um motivo, e a corrida é cobrada pelo trecho feito e revisada pela equipe.
+  const [farAsk, setFarAsk] = useState(false);
+  const [farReason, setFarReason] = useState("");
+  const act = (action: string, reason?: string) => run(async () => {
+    try { await api(`/api/rides/${ride.id}/${action}`, { body: reason ? { reason } : {} }); }
+    catch (e) { if ((e as { code?: string }).code === "far_from_dest") setFarAsk(true); throw e; }
+    setFarAsk(false); setFarReason(""); reload();
+  });
   const target = ride.status === "in_progress" ? ride.dest : ride.origin;
   return (
-    <section className="card overflow-hidden" data-testid="active-ride">
+    <section className="overflow-hidden rounded-[28px] border border-line bg-surface" data-testid="active-ride">
       <MapView className="h-64" ariaLabel="Mapa da corrida" route={ride.geometry} points={[
         { id: "o", kind: "origin", lat: ride.origin.lat, lng: ride.origin.lng }, { id: "d", kind: "dest", lat: ride.dest.lat, lng: ride.dest.lng },
         ...ride.stops.map((p, i) => ({ id: `s${i}`, kind: "stop" as const, lat: p.lat, lng: p.lng })),
         ...(position ? [{ id: "me", kind: "me" as const, ...position }] : []),
       ]} />
       <div className="space-y-3 p-5">
-        <h2 className="display text-2xl">{ride.statusLabel}</h2>
+        <h2 className="display text-[1.9rem] leading-none md:text-4xl">{ride.statusLabel}</h2>
         <p className="text-sm">Passageiro: <strong>{ride.passenger.name}</strong>{ride.passenger.rating ? <span className="num"> · ★ {ride.passenger.rating.toFixed(1).replace(".", ",")}</span> : " · sem avaliações"}</p>
         {ride.rider && (
           <div className="flex items-center gap-3 rounded-xl bg-surface-2 p-3" data-testid="rider">
@@ -304,12 +336,24 @@ function ActiveRide({ ride, reload, position }: { ride: Ride; reload: () => void
         <RideChat rideId={ride.id} messages={ride.messages} onSent={reload} />
         {ride.status === "accepted" && <button type="button" className="btn btn-primary btn-lg w-full" disabled={busy} onClick={() => act("arrive")}>Cheguei ao passageiro</button>}
         {ride.status === "arrived" && <button type="button" className="btn btn-primary btn-lg w-full" disabled={busy} onClick={() => act("start")}>Iniciar viagem</button>}
-        {ride.status === "in_progress" && <button type="button" className="btn btn-primary btn-lg w-full" disabled={busy} onClick={() => act("complete")}>Encerrar viagem</button>}
+        {ride.status === "in_progress" && !farAsk && <button type="button" className="btn btn-primary btn-lg w-full" disabled={busy} onClick={() => act("complete")}>Encerrar viagem</button>}
+        {ride.status === "in_progress" && farAsk && (
+          <div className="space-y-2 rounded-xl bg-surface-2 p-3" data-testid="far-complete">
+            <label className="block text-sm font-semibold" htmlFor="far-reason">Por que vai encerrar longe do destino?</label>
+            <input id="far-reason" className="input" maxLength={200} value={farReason} onChange={(e) => setFarReason(e.target.value)} placeholder="Ex.: passageiro desceu antes" />
+            <p className="text-xs text-muted">A corrida será cobrada só pelo trecho feito e a equipe vai revisar.</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setFarAsk(false)}>Voltar</button>
+              <button type="button" className="btn btn-primary" disabled={busy || farReason.trim().length < 5} onClick={() => act("complete", farReason.trim())}>Encerrar assim mesmo</button>
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-2">
           {ride.status !== "in_progress" && <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => run(async () => { await api(`/api/rides/${ride.id}/cancel`, { body: { reason: "Cancelada pelo motorista" } }); reload(); })}>Não vou conseguir</button>}
-          <a href="tel:190" className="btn btn-danger" onClick={() => { if (!alerted) { setAlerted(true); api(`/api/rides/${ride.id}/emergency`, { body: {} }); } }}><Icon name="sos" size={18} /> Emergência</a>
+          <button type="button" className="btn btn-danger" onClick={() => setSos(true)} data-testid="sos-open"><Icon name="sos" size={18} /> Emergência</button>
         </div>
-        {alerted && <Note tone="warn">Chamado de emergência aberto para a nossa equipe. Em perigo, fale com o 190.</Note>}
+        {sos && <EmergencySheet rideId={ride.id} as="driver" vehicle={ride.vehicle} passengerName={ride.passenger.name} knownPoint={position}
+          fallbackPlace={target.label} onClose={() => setSos(false)} />}
         <ErrorNote>{error}</ErrorNote>
       </div>
     </section>
@@ -383,12 +427,17 @@ export default function DriverHome() {
   return (
     <div className="space-y-4">
       {!data.ride && !data.offer && (
-        <section className="on-deep flex items-center justify-between gap-4 rounded-card bg-deep p-5 text-on-deep">
-          <div>
-            <p className="display text-2xl" data-testid="online-state">{online ? "Você está online" : "Você está offline"}</p>
-            <p className="text-sm text-on-deep-muted">{online ? "Aguardando corridas. Você decide o que aceitar." : "Fique online quando quiser rodar."}</p>
+        <section className={`rounded-[28px] p-5 md:p-6 ${online ? "bg-primary text-white" : "border border-line bg-surface"}`}>
+          <div className="flex items-center gap-4">
+            {/* A órbita: parada quando offline, girando enquanto procura corridas */}
+            {online ? <div aria-hidden="true" className="seek-orbit seek-orbit--light shrink-0"><i /><b /></div>
+              : <span aria-hidden="true" className="grid size-16 shrink-0 place-items-center rounded-full bg-surface-2 text-muted"><Icon name="steering" size={28} /></span>}
+            <div className="min-w-0">
+              <p className="display text-[1.9rem] leading-none md:text-4xl" data-testid="online-state">{online ? "Você está online" : "Você está offline"}</p>
+              <p className={`mt-1.5 text-sm ${online ? "text-white/80" : "text-muted"}`}>{online ? "Procurando corridas perto de você. Você decide o que aceitar." : "Fique online quando quiser rodar."}</p>
+            </div>
           </div>
-          <button type="button" className={`btn btn-lg ${online ? "btn-line-deep" : "btn-on-deep"}`} disabled={action.busy || (manual && !position)} onClick={online ? goOffline : goOnline}>{online ? "Ficar offline" : "Ficar online"}</button>
+          <button type="button" className={`btn btn-lg mt-5 w-full ${online ? "bg-white text-brand-solid" : "btn-primary"}`} disabled={action.busy || (manual && !position)} onClick={online ? goOffline : goOnline}>{online ? "Ficar offline" : "Ficar online"}</button>
         </section>
       )}
       <ErrorNote>{action.error}</ErrorNote>
@@ -404,11 +453,11 @@ export default function DriverHome() {
       {online && !manual && !gps.offline && gps.fix?.accuracy != null && gps.fix.accuracy > 100 && <Note tone="warn">Sinal de GPS fraco (precisão de ±{Math.round(gps.fix.accuracy)} m). Em lugar aberto, longe de prédios, ele melhora.</Note>}
       {online && !manual && gps.hidden && <Note tone="warn">A Orbi saiu da tela: o celular pausa o GPS de apps abertos no navegador. Volte para o app para continuar recebendo corridas.</Note>}
       {data.driver && !data.driver.pixKey && data.paymentRules?.pix_driver && !data.ride && !data.offer && (
-        <a href="/motorista/conta#recebimento" className="flex items-center gap-3 rounded-2xl p-3 text-sm shadow-[0_0_0_1px_var(--line)_inset] hover:bg-surface-2">
+        <Link href="/motorista/conta#recebimento" className="flex items-center gap-3 rounded-2xl p-3 text-sm shadow-[0_0_0_1px_var(--line)_inset] hover:bg-surface-2">
           <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary text-on-primary"><Icon name="qr" size={20} /></span>
           <span className="flex-1"><span className="block font-semibold">Receba também por Pix e cartão</span><span className="block text-muted">Cadastre sua chave Pix ou sua maquininha para receber mais corridas.</span></span>
           <Icon name="arrow" size={18} />
-        </a>
+        </Link>
       )}
 
       {data.offer && !data.ride && <OfferCard offer={data.offer} reload={reload} />}
@@ -417,7 +466,7 @@ export default function DriverHome() {
 
       {!data.ride && !data.offer && (
         <>
-          <MapView className="h-64 rounded-card" ariaLabel="Sua posição" onPick={manual ? (p) => setPosition(p) : undefined} points={position ? [{ id: "me", kind: "me", ...position }] : []} />
+          <MapView className="h-64 overflow-hidden rounded-[28px] border border-line" ariaLabel="Sua posição" onPick={manual ? (p) => setPosition(p) : undefined} points={position ? [{ id: "me", kind: "me", ...position }] : []} />
           {data.manualLocationAllowed && (
             <label className="flex items-start gap-3 rounded-xl border border-dashed border-line p-3 text-sm">
               <input type="checkbox" name="manual" className="mt-0.5 size-5 accent-[var(--primary)]" checked={manual} onChange={(e) => setManual(e.target.checked)} />
@@ -428,8 +477,8 @@ export default function DriverHome() {
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="card p-4"><p className="text-sm text-muted">Saldo</p><p className="display num text-2xl">{brl(data.balanceCents)}</p></div>
-        <div className="card p-4"><p className="text-sm text-muted">Sua nota</p><p className="display num text-2xl">{data.rating ? data.rating.toFixed(1).replace(".", ",") : "—"}</p></div>
+        <div className="rounded-[22px] border border-line p-4"><p className="text-sm text-muted">Saldo</p><p className="display num text-2xl">{brl(data.balanceCents)}</p></div>
+        <div className="rounded-[22px] border border-line p-4"><p className="text-sm text-muted">Sua nota</p><p className="display num text-2xl">{data.rating ? data.rating.toFixed(1).replace(".", ",") : "—"}</p></div>
       </div>
     </div>
   );

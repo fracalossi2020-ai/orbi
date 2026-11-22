@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
-import { Hero } from "@/components/site/Hero";
-import { DriverBand, QuoteBar } from "@/components/site/HomeSections";
-import { FinalCta } from "@/components/site/FinalCta";
-import { ConceptStrip, HomeFaq } from "@/components/site/Landing";
-import { homeFaq } from "@/lib/home-faq";
-import { getDb, schema as s } from "@/db";
-import { currentUser } from "@/server/auth";
+import { Hero } from "@/frontend/components/site/Hero";
+import { DriverBand, QuoteBar } from "@/frontend/components/site/HomeSections";
+import { FinalCta } from "@/frontend/components/site/FinalCta";
+import { ConceptStrip, HomeFaq } from "@/frontend/components/site/Landing";
+import { homeFaq } from "@/frontend/lib/home-faq";
+import { getDb, schema as s } from "@/database";
+import { currentUser } from "@/backend/auth";
 
 /** Só cidades ativas no painel aparecem; o raio desenha a área atendida no mapa. */
 async function cities() {

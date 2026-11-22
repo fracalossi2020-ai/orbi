@@ -1,6 +1,6 @@
-import { STAFF_CHANNEL, subscribe, userChannel } from "@/server/bus";
-import { publicRoute, ApiError } from "@/server/api";
-import { STAFF } from "@/domain/permissions";
+import { STAFF_CHANNEL, subscribe, userChannel } from "@/backend/bus";
+import { publicRoute, ApiError } from "@/backend/api";
+import { STAFF } from "@/shared/permissions";
 
 export const dynamic = "force-dynamic";
 

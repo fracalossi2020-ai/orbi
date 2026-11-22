@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { adminApi, apiClient, approvedDriverApi, gpsContext, passengerApi, RIDE_BODY, signUp, unique, uniquePhone } from "./helpers";
+import { openTrip, action, adminApi, apiClient, approvedDriverApi, driveRide, gpsContext, lastCode, passengerApi, RIDE_BODY, signUp, unique, uniquePhone, validCpf } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -20,6 +20,7 @@ test("parada no caminho e corrida agendada pela interface", async ({ browser }) 
       : [{ label: "Coronel Fabriciano", detail: "Minas Gerais", lat: -19.52, lng: -42.628, kind: "area", inArea: true }] } });
   });
   await signUp(page, "passageiro", uniquePhone(), "Teresa Teste Agenda");
+  await openTrip(page);
   await expect(page.getByRole("combobox", { name: "Partida" })).not.toHaveValue("", { timeout: 20000 });
   // Aviso de motoristas por perto (dado real: pode ser zero)
   await expect(page.getByRole("status").filter({ hasText: "por perto" })).toBeVisible({ timeout: 20000 });
@@ -124,7 +125,7 @@ test("pagamentos direto ao motorista: Pix na chave dele e maquininha", async () 
     const p = await passengerApi();
     // Sem chave Pix, o motorista não recebe corrida paga por Pix; chave que não confere com o tipo é recusada.
     expect((await d.c.post("/api/driver/payment-prefs", { data: { pixKeyType: "cpf", pixKey: "31999998888", cardMachine: false } })).status()).toBe(400);
-    expect((await d.c.post("/api/driver/payment-prefs", { data: { pixKeyType: "phone", pixKey: "(31) 99999-8888", cardMachine: false } })).ok()).toBeTruthy();
+    expect((await d.c.post("/api/driver/payment-prefs", { data: { pixKeyType: "phone", pixKey: "(31) 99999-8888", cardMachine: false, password: "senha-de-teste" } })).ok()).toBeTruthy();
 
     // Ninguém online tem maquininha: a corrida fica procurando e não chega a este motorista.
     const card = await (await p.post("/api/rides", { data: RIDE_BODY(d.categoryId, { paymentMethod: "card_machine" }) })).json();
@@ -137,12 +138,12 @@ test("pagamentos direto ao motorista: Pix na chave dele e maquininha", async () 
     const offer = (await (await d.c.get("/api/driver/state")).json()).offer;
     expect(offer.paymentMethod).toBe("pix_driver");
     expect((await d.c.post(`/api/driver/offers/${offer.id}`, { data: { accept: true } })).ok()).toBeTruthy();
-    for (const a of ["arrive", "start"]) expect((await d.c.post(`/api/rides/${ride.id}/${a}`, { data: {} })).ok()).toBeTruthy();
+    await driveRide(d.c, ride.id, ["arrive", "start"]);
     const view = (await (await p.get("/api/rides")).json()).active;
     expect(view.driverPix.key).toBe("+5531999998888");
     expect(view.driverPix.payload).toContain("br.gov.bcb.pix");
     expect(view.driverPix.payload).toContain(`54${String((view.totalCents / 100).toFixed(2).length).padStart(2, "0")}${(view.totalCents / 100).toFixed(2)}`);
-    expect((await d.c.post(`/api/rides/${ride.id}/complete`, { data: {} })).ok()).toBeTruthy();
+    await driveRide(d.c, ride.id, ["complete"]);
     // No extrato, entra como o dinheiro: o motorista recebeu tudo e deve a comissão.
     const earnings = await (await d.c.get("/api/driver/finance")).json();
     expect(JSON.stringify(earnings)).toContain("Corrida com Pix na sua chave");
@@ -192,14 +193,15 @@ test("entrar com Google: conta nova, volta direto, vincula conta existente e rec
   const page = await ctx.newPage();
   const id = unique();
 
-  // Conta nova: o Google confirma o e-mail; falta só aceitar os termos
+  // Conta nova: o Google confirma o e-mail; faltam o CPF e aceitar os termos
   await nextGoogleUser({ sub: `g-${id}`, email: `g${id}@e2e.prumo.test`, name: "Gabriela Teste Google" });
-  await page.goto("/entrar?perfil=passageiro");
-  await page.getByRole("link", { name: "Continuar com Google" }).click();
+  await page.goto("/entrar");
+  await action(page, "Continuar com Google").click();
   await page.waitForURL(/google=novo/);
   await expect(page.getByRole("heading", { name: "Falta pouco" })).toBeVisible();
   await expect(page.getByText(`g${id}@e2e.prumo.test`)).toBeVisible();
   await expect(page.getByLabel("Nome completo")).toHaveValue("Gabriela Teste Google");
+  await page.getByLabel("CPF").fill(validCpf());
   await page.getByRole("button", { name: "Criar conta" }).click();
   await expect(page.getByText(/Aceite os termos/)).toBeVisible();
   await page.locator('input[name="accept"]').check();
@@ -208,28 +210,58 @@ test("entrar com Google: conta nova, volta direto, vincula conta existente e rec
   const me = await (await page.request.get("/api/me")).json();
   expect(me.user).toMatchObject({ email: `g${id}@e2e.prumo.test`, emailVerified: true, role: "passenger" });
 
+  // Conta do Google não tem senha para pedir: a troca de e-mail começa com um código no e-mail ATUAL, e só depois o novo recebe o dele
+  const atual = `g${id}@e2e.prumo.test`;
+  const novo = `gnovo${id}@e2e.prumo.test`;
+  expect(me.user.viaGoogle).toBe(true);
+  const first = await page.request.post("/api/auth/email-send", { data: { email: novo } });
+  expect(first.ok()).toBeTruthy();
+  expect(await first.json()).toMatchObject({ step: "current" });
+  expect(() => lastCode(novo)).toThrow();
+  // Reenviar continua indo para o e-mail atual; o novo ainda não recebeu nada
+  expect((await page.request.post("/api/auth/email-send", { data: {} })).ok()).toBeTruthy();
+  expect(() => lastCode(novo)).toThrow();
+  expect((await page.request.post("/api/auth/email-confirm", { data: { code: "000000" } })).status()).toBe(400);
+  const authorized = await page.request.post("/api/auth/email-confirm", { data: { code: lastCode(atual) } });
+  expect(authorized.ok()).toBeTruthy();
+  expect(await authorized.json()).toMatchObject({ next: "new" });
+  expect((await (await page.request.get("/api/me")).json()).user.email).toBe(atual);
+  expect((await page.request.post("/api/auth/email-confirm", { data: { code: lastCode(novo) } })).ok()).toBeTruthy();
+  expect((await (await page.request.get("/api/me")).json()).user).toMatchObject({ email: novo, pendingEmail: null });
+
   // Saiu e voltou: o Google reconhece a conta e entra direto
   await ctx.clearCookies();
   await page.goto("/entrar");
-  await page.getByRole("link", { name: "Continuar com Google" }).click();
+  await action(page, "Continuar com Google").click();
   await page.waitForURL("**/passageiro");
 
   // Conta criada com senha e mesmo e-mail: o Google vincula em vez de duplicar
   await ctx.clearCookies();
   const existing = await apiClient();
   const email = `vinc${id}@e2e.prumo.test`;
-  expect((await existing.post("/api/auth/register", { data: { name: "Vera Teste Vinculo", email, password: "senha-de-teste", role: "passenger", acceptPrivacy: true } })).ok()).toBeTruthy();
+  expect((await existing.post("/api/auth/register", { data: { name: "Vera Teste Vinculo", email, password: "senha-de-teste", cpf: validCpf(), acceptPrivacy: true } })).ok()).toBeTruthy();
+  // E-mail ainda não confirmado: o Google não vincula (evita pré-sequestro) e explica o caminho
   await nextGoogleUser({ sub: `g2-${id}`, email, name: "Vera" });
   await page.goto("/entrar");
-  await page.getByRole("link", { name: "Continuar com Google" }).click();
+  await action(page, "Continuar com Google").click();
+  await page.waitForURL(/google=email-nao-confirmado/);
+  await expect(page.getByText("Entre com sua senha e confirme o e-mail para usar o Google.")).toBeVisible();
+  expect((await (await page.request.get("/api/me")).json()).user).toBeNull();
+  // Com o e-mail confirmado, vincula e encerra as outras sessões da conta
+  expect((await existing.post("/api/auth/email-send", { data: {} })).ok()).toBeTruthy();
+  expect((await existing.post("/api/auth/email-confirm", { data: { code: lastCode(email) } })).ok()).toBeTruthy();
+  await nextGoogleUser({ sub: `g2-${id}`, email, name: "Vera" });
+  await page.goto("/entrar");
+  await action(page, "Continuar com Google").click();
   await page.waitForURL("**/passageiro");
+  expect((await (await existing.get("/api/me")).json()).user).toBeNull();
   expect((await (await page.request.get("/api/me")).json()).user).toMatchObject({ email, name: "Vera Teste Vinculo", emailVerified: true });
 
   // Conta da equipe não entra pelo Google
   await ctx.clearCookies();
   await nextGoogleUser({ sub: `g3-${id}`, email: "admin@e2e.prumo.test", name: "Admin" });
   await page.goto("/entrar");
-  await page.getByRole("link", { name: "Continuar com Google" }).click();
+  await action(page, "Continuar com Google").click();
   await page.waitForURL(/google=equipe/);
   await expect(page.getByText("Contas da equipe entram com e-mail e senha.")).toBeVisible();
 });

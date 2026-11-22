@@ -5,7 +5,7 @@
  */
 import { randomBytes, scrypt as scryptCb } from "node:crypto";
 import { promisify } from "node:util";
-import { getDb, schema as s } from "../src/db";
+import { getDb, schema as s } from "../src/database";
 
 const scrypt = promisify(scryptCb) as (p: string, salt: Buffer, len: number) => Promise<Buffer>;
 

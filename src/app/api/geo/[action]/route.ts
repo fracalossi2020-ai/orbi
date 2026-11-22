@@ -1,11 +1,11 @@
-import { ApiError, publicRoute } from "@/server/api";
-import { checkRateLimit } from "@/server/auth";
-import { clientIp } from "@/server/security";
-import { getOutline, getRoute, reverseGeocode, searchPlaces, type Bbox } from "@/server/geo";
-import { getDb, schema as s } from "@/db";
-import { findRegion } from "@/domain/geo";
-import type { Place } from "@/domain/place";
-import { lookupCep } from "@/server/verify";
+import { ApiError, publicRoute } from "@/backend/api";
+import { checkRateLimit } from "@/backend/auth";
+import { clientIp } from "@/backend/security";
+import { getOutline, getRoute, reverseGeocode, searchPlaces, type Bbox } from "@/backend/geo";
+import { getDb, schema as s } from "@/database";
+import { findRegion } from "@/shared/geo";
+import type { Place } from "@/shared/place";
+import { lookupCep } from "@/backend/verify";
 
 const VALE_DO_ACO = { lat: -19.5, lng: -42.58 };
 const MARGIN_KM = 12;

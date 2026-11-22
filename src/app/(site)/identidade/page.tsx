@@ -1,9 +1,9 @@
 import { cookies } from "next/headers";
-import { getDb } from "@/db";
-import { getSetting } from "@/db/seed";
-import { currentUser } from "@/server/auth";
-import { can } from "@/domain/permissions";
-import { IdentityBoard } from "@/components/site/IdentityBoard";
+import { getDb } from "@/database";
+import { getSetting } from "@/database/seed";
+import { currentUser } from "@/backend/auth";
+import { can } from "@/shared/permissions";
+import { IdentityBoard } from "@/frontend/components/site/IdentityBoard";
 
 export const metadata = { title: "Identidade visual" };
 

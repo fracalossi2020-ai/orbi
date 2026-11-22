@@ -1,5 +1,5 @@
 import { ImageResponse } from "next/og";
-import { ORBI, OrbiMark } from "@/components/OrbiMark";
+import { ORBI, OrbiMark } from "@/frontend/components/OrbiMark";
 
 /** Imagem que aparece ao compartilhar o site no WhatsApp e nas redes: capa no estilo do manual da marca. */
 export const alt = "Orbi — Mobilidade urbana mais simples, rápida e segura. Vale do Aço, MG.";

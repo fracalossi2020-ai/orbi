@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { getDb } from "@/db";
-import { getSetting } from "@/db/seed";
-import { Icon } from "@/components/Icon";
-import { Body, PageHead } from "@/components/site/Page";
-import { Reveal } from "@/components/site/Fx";
-import { withDefaultRules, DEFAULT_DRIVER_RULES, DOC_INFO, type DriverRules } from "@/domain/driver-rules";
+import { getDb } from "@/database";
+import { getSetting } from "@/database/seed";
+import { MotoSoon } from "@/frontend/components/MotoSoon";
+import { Icon } from "@/frontend/components/Icon";
+import { Body, PageHead } from "@/frontend/components/site/Page";
+import { Reveal } from "@/frontend/components/site/Fx";
+import { withDefaultRules, DEFAULT_DRIVER_RULES, DOC_INFO, type DriverRules } from "@/shared/driver-rules";
 
 export const metadata = { title: "Requisitos para dirigir", description: "O que você precisa para ser motorista parceiro da Orbi no Vale do Aço: CNH com EAR, documentos, carro e regularização." };
 
@@ -66,6 +67,7 @@ export default async function Requisitos() {
             <Link href="/entrar?perfil=motorista" className="btn btn-primary mt-6 w-full">Começar meu cadastro</Link>
           </Reveal>
         </div>
+        <div className="mt-4"><MotoSoon /></div>
       </Body>
     </>
   );

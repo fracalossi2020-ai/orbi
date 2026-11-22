@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { base32Decode, base32Encode, clientIp, decrypt, encrypt, hashRecovery, newRecoveryCodes, passwordProblem, rateLimit, sniffFile, totpAt, verifyTotp } from "@/server/security";
+import { base32Decode, base32Encode, clientIp, decrypt, encrypt, findRecovery, hashRecovery, legacyHashRecovery, newRecoveryCodes, evictBuckets, ipLimitKey, resolveClientIp, UNKNOWN_IP, passwordProblem, rateLimit, sniffFile, totpAt, verifyTotp } from "@/backend/security";
 
 describe("aplicativo autenticador (TOTP)", () => {
   // RFC 6238, apêndice B: segredo "12345678901234567890", instante 59 s → 94287082 (8 dígitos); com 6 dígitos, 287082.
@@ -21,9 +21,22 @@ describe("aplicativo autenticador (TOTP)", () => {
     expect(verifyTotp(secret, "12345", null, now)).toBeNull();
   });
   it("códigos de recuperação: 10, únicos, conferidos sem diferenciar traço e maiúsculas", () => {
-    const { codes, hashes } = newRecoveryCodes();
+    const key = new TextEncoder().encode("chave-de-teste-chave-de-teste-1234");
+    const { codes, hashes } = newRecoveryCodes(key);
     expect(new Set(codes).size).toBe(10);
-    expect(hashRecovery(codes[0].toLowerCase().replace("-", ""))).toBe(hashes[0]);
+    // 64 bits: 16 caracteres hexadecimais em 4 grupos
+    expect(codes[0]).toMatch(/^[0-9A-F]{4}(-[0-9A-F]{4}){3}$/);
+    expect(hashRecovery(codes[0].toLowerCase().replace(/-/g, ""), key)).toBe(hashes[0]);
+    expect(hashes[0]).toMatch(/^v2:/);
+    expect(findRecovery(codes[3].toLowerCase(), hashes, key)).toBe(hashes[3]);
+    expect(findRecovery("0000-0000-0000-0000", hashes, key)).toBeNull();
+    // outra chave do servidor não reconhece os códigos
+    expect(findRecovery(codes[0], hashes, new TextEncoder().encode("outra-chave-outra-chave-outra-chave"))).toBeNull();
+  });
+  it("aceita código de recuperação no formato antigo (SHA-256 sem sal)", () => {
+    const key = new TextEncoder().encode("chave-de-teste-chave-de-teste-1234");
+    const old = legacyHashRecovery("ab12c-d34ef");
+    expect(findRecovery("AB12C-D34EF", [old], key)).toBe(old);
   });
 });
 
@@ -63,5 +76,64 @@ describe("IP e limite", () => {
     const key = `t:${Math.random()}`;
     for (let i = 0; i < 3; i++) expect(rateLimit(key, 3)).toBe(true);
     expect(rateLimit(key, 3)).toBe(false);
+  });
+});
+
+describe("IP de quem acessa (M3)", () => {
+  const h = (xff?: string) => new Headers(xff ? { "x-forwarded-for": xff } : {});
+  it("em produção sem configuração, não confia no cabeçalho", () => {
+    expect(resolveClientIp(h("6.6.6.6, 200.1.2.3"), { NODE_ENV: "production" })).toBe(UNKNOWN_IP);
+  });
+  it("em produção com TRUST_PROXY_HOPS, usa o IP do proxy", () => {
+    expect(resolveClientIp(h("6.6.6.6, 200.1.2.3"), { NODE_ENV: "production", TRUST_PROXY_HOPS: "1" })).toBe("200.1.2.3");
+    expect(resolveClientIp(h("6.6.6.6, 200.1.2.3, 10.0.0.1"), { NODE_ENV: "production", TRUST_PROXY_HOPS: "2" })).toBe("200.1.2.3");
+  });
+  it("TRUST_X_REAL_IP sozinho não basta em produção: exige TRUST_PROXY_HOPS", () => {
+    const hh = new Headers({ "x-real-ip": "9.9.9.9" });
+    expect(resolveClientIp(hh, { NODE_ENV: "production", TRUST_X_REAL_IP: "true" })).toBe(UNKNOWN_IP);
+    expect(resolveClientIp(hh, { NODE_ENV: "production", TRUST_X_REAL_IP: "true", TRUST_PROXY_HOPS: "1" })).toBe("9.9.9.9");
+  });
+  it("IPv6 é agrupado pelo prefixo /64", () => {
+    const env = { NODE_ENV: "production", TRUST_PROXY_HOPS: "1" };
+    const a = resolveClientIp(h("2001:db8:1:2:aaaa:bbbb:cccc:dddd"), env);
+    const b = resolveClientIp(h("2001:DB8:1:2::1"), env);
+    expect(a).toBe(b);
+    expect(a).toBe("2001:0db8:0001:0002::/64");
+    expect(resolveClientIp(h("2001:db8:1:3::1"), env)).not.toBe(a);
+    expect(ipLimitKey("::ffff:200.1.2.3")).toBe("200.1.2.3");
+    expect(ipLimitKey("200.1.2.3")).toBe("200.1.2.3");
+  });
+  it("fora de produção mantém o padrão de 1 proxy", () => {
+    expect(resolveClientIp(h("6.6.6.6, 200.1.2.3"), { NODE_ENV: "development" })).toBe("200.1.2.3");
+    expect(resolveClientIp(h(), { NODE_ENV: "development" })).toBe("local");
+  });
+});
+
+describe("descarte de contadores (M3)", () => {
+  it("tira primeiro os vencidos e, se ainda estiver cheio, os mais antigos, sem zerar tudo", () => {
+    const m = new Map<string, { n: number; until: number }>();
+    const now = 1000;
+    m.set("vencido", { n: 1, until: 500 });
+    for (let i = 0; i < 20; i++) m.set(`ativo${i}`, { n: 1, until: now + 1000 });
+    evictBuckets(m, now, 10);
+    expect(m.has("vencido")).toBe(false);
+    expect(m.size).toBeGreaterThan(0);
+    expect(m.size).toBeLessThanOrEqual(10);
+    expect(m.has("ativo19")).toBe(true);
+    expect(m.has("ativo0")).toBe(false);
+  });
+  it("bloqueios ativos sobrevivem ao descarte enquanto houver outras chaves para tirar", () => {
+    const m = new Map<string, { n: number; until: number; blocked?: boolean }>();
+    const now = 1000;
+    m.set("bloqueado", { n: 99, until: now + 1000, blocked: true });
+    for (let i = 0; i < 20; i++) m.set(`ativo${i}`, { n: 1, until: now + 1000 });
+    evictBuckets(m, now, 10);
+    expect(m.has("bloqueado")).toBe(true);
+    expect(m.size).toBeLessThanOrEqual(10);
+  });
+  it("com espaço sobrando, só os vencidos saem", () => {
+    const m = new Map([["a", { n: 1, until: 1 }], ["b", { n: 1, until: 5000 }]]);
+    evictBuckets(m, 1000, 10);
+    expect([...m.keys()]).toEqual(["b"]);
   });
 });

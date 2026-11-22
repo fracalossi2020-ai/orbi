@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_SCHEDULE, scheduleProblem, searchStartsAt } from "@/domain/schedule";
-import { getRoute, searchPlaces } from "@/server/geo";
+import { DEFAULT_SCHEDULE, scheduleProblem, searchStartsAt } from "@/shared/schedule";
+import { getRoute, searchPlaces } from "@/backend/geo";
 
 const now = new Date("2026-11-06T12:00:00-03:00");
 const plus = (min: number) => new Date(now.getTime() + min * 60_000);

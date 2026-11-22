@@ -1,10 +1,12 @@
-import { desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { getDb, schema as s } from "@/db";
-import { ApiError, audit, body, route } from "@/server/api";
-import { checkRateLimit } from "@/server/auth";
-import { activeRideFor, MAX_STOPS, quote, requestRide, rideView } from "@/server/rides";
-import { PAYMENT_METHODS } from "@/domain/payment-methods";
+import { getDb, schema as s } from "@/database";
+import { ApiError, audit, body, route } from "@/backend/api";
+import { checkRateLimit } from "@/backend/auth";
+import { activeRideFor, MAX_STOPS, quote, requestRide, rideSummaries, rideView } from "@/backend/rides";
+import { nextRideCursor, pageParams, ridesBefore, ridesOrder } from "@/backend/pagination";
+import { PAYMENT_METHODS } from "@/shared/payment-methods";
+import { PASSENGER_APP } from "@/shared/permissions";
 
 const point = z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) });
 const placed = point.extend({ label: z.string().trim().min(1).max(200) });
@@ -22,15 +24,20 @@ const requestSchema = z.object({
 });
 const quoteSchema = z.object({ origin: point, dest: point, couponCode: z.string().trim().max(40).nullish(), stops: z.array(point).max(MAX_STOPS).default([]) });
 
-export const GET = route(async ({ user }) => {
+// A corrida ativa vem na vista completa (mapa, chat, Pix); o histórico vem enxuto, paginado (limit e before) e em lote.
+export const GET = route(async ({ req, user }) => {
   const db = await getDb();
+  const { limit, before } = pageParams(req, 50, 100);
   const active = await activeRideFor(user.id, "passenger");
-  const history = await db.select().from(s.rides).where(eq(s.rides.passengerId, user.id)).orderBy(desc(s.rides.createdAt)).limit(50);
+  const rows = await db.select().from(s.rides).where(and(eq(s.rides.passengerId, user.id), ridesBefore(before)))
+    .orderBy(...ridesOrder()).limit(limit + 1);
+  const page = rows.slice(0, limit);
   return {
     active: active ? await rideView(active, "passenger") : null,
-    history: await Promise.all(history.filter((r) => r.id !== active?.id).map((r) => rideView(r, "passenger"))),
+    history: await rideSummaries(page.filter((r) => r.id !== active?.id), "passenger"),
+    nextBefore: nextRideCursor(page, rows.length > limit),
   };
-}, { roles: ["passenger"] });
+}, { roles: PASSENGER_APP });
 
 export const POST = route(async ({ req, user }) => {
   const url = new URL(req.url);
@@ -40,11 +47,11 @@ export const POST = route(async ({ req, user }) => {
     const v = await body(req, quoteSchema);
     // Cupons não podem ser descobertos por tentativa e erro.
     if (v.couponCode && !checkRateLimit(`coupon:${user.id}`, 15, 60 * 60_000)) throw new ApiError(429, "Muitas tentativas de cupom. Aguarde uma hora.");
-    return quote(v.origin, v.dest, v.couponCode, v.stops);
+    return quote(v.origin, v.dest, v.couponCode, v.stops, user.id);
   }
   if (!checkRateLimit(`ride:${user.id}`, 20, 60 * 60_000)) throw new ApiError(429, "Muitos pedidos em pouco tempo. Aguarde um pouco.");
   const v = await body(req, requestSchema);
   const ride = await requestRide(user.id, v);
   await audit(user.id, "ride.request", "ride", ride.id);
   return rideView(ride, "passenger");
-}, { roles: ["passenger"] });
+}, { roles: PASSENGER_APP });

@@ -59,6 +59,10 @@ const env = {
   // Os testes entram no painel muitas vezes seguidas (o mesmo código do autenticador não vale duas vezes em 30 s)
   // e fazem centenas de ações do mesmo computador. A verificação em duas etapas tem teste próprio, com passageiro.
   PRUMO_REQUIRE_STAFF_MFA: process.env.PRUMO_REQUIRE_STAFF_MFA ?? "false", PRUMO_WRITE_LIMIT: "100000",
+  // Atrás de um proxy confiável (os testes mandam x-forwarded-for para cada cliente ter o seu endereço).
+  TRUST_PROXY_HOPS: "1",
+  // A posição do motorista é conferida em "cheguei" e "encerrar"; só o tempo mínimo da viagem fica desligado.
+  PRUMO_RIDE_GUARDS: "strict", PRUMO_COMPLETE_MIN_FACTOR: "0", PRUMO_COMPLETE_MIN_S: "0",
 };
 execFileSync(process.execPath, ["node_modules/tsx/dist/cli.mjs", "scripts/create-admin.ts", "Admin de teste", "admin@e2e.prumo.test", "admin"], { env, stdio: "inherit" });
 const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", "3100"], { env: { ...env, NODE_ENV: "production" }, stdio: "inherit" });

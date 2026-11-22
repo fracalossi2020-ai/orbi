@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { couponDiscount, ledgerEffect, quoteFare } from "@/domain/pricing";
-import { DEFAULT_WEIGHTS, rankCandidates, type Candidate, type RideContext } from "@/domain/dispatch";
-import { findRegion, haversineM } from "@/domain/geo";
-import { can } from "@/domain/permissions";
-import { canTransition } from "@/domain/transitions";
+import { couponDiscount, ledgerEffect, quoteFare } from "@/shared/pricing";
+import { DEFAULT_WEIGHTS, rankCandidates, type Candidate, type RideContext } from "@/shared/dispatch";
+import { findRegion, haversineM } from "@/shared/geo";
+import { can } from "@/shared/permissions";
+import { canTransition } from "@/shared/transitions";
 
 const tariff = { baseCents: 500, perKmCents: 200, perMinCents: 50, minCents: 800, serviceFeeCents: 100, commissionBps: 1500 };
 
@@ -61,6 +61,11 @@ describe("distribuição", () => {
       { locationAgeS: 600 }, { declinedThisRide: true }, { lat: -19.9 }]) {
       expect(rankCandidates([cand(over)], ride)).toHaveLength(0);
     }
+  });
+  it("nunca oferece a corrida ao próprio passageiro", () => {
+    const r = rankCandidates([cand({ driverId: "eu" }), cand({ driverId: "outro", lat: -19.48 })], { ...ride, passengerId: "eu" });
+    expect(r.map((x) => x.candidate.driverId)).toEqual(["outro"]);
+    expect(rankCandidates([cand({ driverId: "eu" })], { ...ride, passengerId: null })).toHaveLength(1);
   });
   it("prefere o mais próximo quando o resto é igual", () => {
     const r = rankCandidates([cand({ driverId: "longe", lat: -19.50 }), cand({ driverId: "perto" })], ride);

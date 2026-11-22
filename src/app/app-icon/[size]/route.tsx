@@ -1,5 +1,5 @@
 import { ImageResponse } from "next/og";
-import { ORBI, OrbiMark } from "@/components/OrbiMark";
+import { ORBI, OrbiMark } from "@/frontend/components/OrbiMark";
 
 /** Ícone do app em PNG (Android e iPhone pedem PNG): o símbolo da Orbi em degradê sobre o Preto Profundo, como no manual. "512m": versão com margem para o recorte do Android. */
 export async function GET(_req: Request, { params }: { params: Promise<{ size: string }> }) {

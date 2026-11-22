@@ -1,8 +1,8 @@
 "use client";
-import { MapView } from "@/components/LazyMap";
+import { MapView } from "@/frontend/components/LazyMap";
 import { use, useEffect, useState } from "react";
-import { Logo } from "@/components/Logo";
-import { api, Empty, Note, Spinner } from "@/components/ui";
+import { Logo } from "@/frontend/components/Logo";
+import { api, Empty, Note, Spinner } from "@/frontend/components/ui";
 
 
 type Shared = {

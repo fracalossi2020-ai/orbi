@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { isFullName, isValidBrPhone, isValidCep, isValidCnh, isValidCnpj, isValidCpf, isValidEmailFormat, isValidMobile, isValidPixKey, isValidPlate } from "@/domain/validation";
-import { emailDomainExists } from "@/server/verify";
+import { isFullName, isValidBrPhone, isValidCep, isValidCnh, isValidCnpj, isValidCpf, isValidEmailFormat, isValidMobile, isValidPixKey, isValidPlate } from "@/shared/validation";
+import { emailDomainExists } from "@/backend/verify";
 
 describe("documentos", () => {
   it("CPF confere os dígitos e recusa sequências", () => {

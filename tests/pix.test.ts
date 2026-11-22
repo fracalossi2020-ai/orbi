@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { crc16, normalizePixKey, pixKeyMatches, pixPayload } from "@/domain/pix";
-import { driverAccepts, isDirect } from "@/domain/payment-methods";
-import { ledgerEffect } from "@/domain/pricing";
+import { crc16, normalizePixKey, pixKeyMatches, pixPayload } from "@/shared/pix";
+import { driverAccepts, isDirect } from "@/shared/payment-methods";
+import { ledgerEffect } from "@/shared/pricing";
 
 describe("Pix copia e cola", () => {
   it("CRC16-CCITT confere com o vetor padrão", () => {

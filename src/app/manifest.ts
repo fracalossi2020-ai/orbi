@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 
 /**
  * Manifesto do app: no Android, "Instalar app"; no iPhone, Compartilhar › "Adicionar à Tela de Início".
- * Abre em tela cheia, sem a barra do navegador, direto na tela de viagem.
+ * Abre em tela cheia, sem a barra do navegador, direto na entrada (criar conta ou entrar).
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -10,7 +10,8 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "Orbi",
     description: "Mobilidade no Vale do Aço: preço antes de pedir, motorista identificado e viagem compartilhada.",
     lang: "pt-BR",
-    start_url: "/passageiro",
+    // Abre direto na entrada: quem já tem conta cai na própria tela (o layout de entrada redireciona), quem não tem vê criar/entrar.
+    start_url: "/entrar",
     scope: "/",
     display: "standalone",
     orientation: "portrait",

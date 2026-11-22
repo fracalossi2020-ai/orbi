@@ -1,4 +1,4 @@
-import { requireRole } from "@/server/guard";
+import { requireRole } from "@/backend/guard";
 import { DriverShell } from "./shell";
 
 export const metadata = { title: "Motorista" };

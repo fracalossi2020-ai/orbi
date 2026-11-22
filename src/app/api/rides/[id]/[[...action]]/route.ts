@@ -3,19 +3,21 @@ import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { dataDir, getDb, schema as s } from "@/db";
-import { ApiError, audit, body, route } from "@/server/api";
-import { publish, STAFF_CHANNEL, userChannel } from "@/server/bus";
-import { cancelRide, completeTrip, markArrived, notify, rateRide, refreshPayment, rideView, startTrip } from "@/server/rides";
-import { checkRateLimit } from "@/server/auth";
-import { fileHeaders } from "@/server/security";
-import { ACTIVE_STATUSES } from "@/domain/transitions";
+import { dataDir, getDb, schema as s } from "@/database";
+import { ApiError, audit, body, requireUuid, route } from "@/backend/api";
+import { publish, userChannel } from "@/backend/bus";
+import { raiseEmergency } from "@/backend/emergency";
+import { parseSosPoint, sosProblem } from "@/shared/emergency";
+import { cancelRide, completeTrip, markArrived, rateRide, refreshPayment, rideView, startTrip } from "@/backend/rides";
+import { checkRateLimit } from "@/backend/auth";
+import { fileHeaders } from "@/backend/security";
+import { ACTIVE_STATUSES, showsDriverLocation } from "@/shared/transitions";
 
 type P = { id: string; action?: string[] };
 
 async function loadOwned(id: string, userId: string) {
   const db = await getDb();
-  const [ride] = await db.select().from(s.rides).where(eq(s.rides.id, id));
+  const [ride] = await db.select().from(s.rides).where(eq(s.rides.id, requireUuid(id, "Corrida não encontrada.")));
   if (!ride) throw new ApiError(404, "Corrida não encontrada.");
   const as = ride.passengerId === userId ? "passenger" : ride.driverId === userId ? "driver" : null;
   if (!as) throw new ApiError(403, "Esta corrida não é sua.");
@@ -29,7 +31,9 @@ export const GET = route<P>(async ({ user, params }) => {
     if (ride.status === "completed" && ride.paymentStatus === "pending") await refreshPayment(ride.id).catch(() => null);
     return rideView(ride, as);
   }
+  // A foto do motorista só vale para o passageiro enquanto a corrida está ativa (mesma regra da posição).
   if (action === "driver-photo" && ride.driverId) {
+    if (as !== "passenger" || !showsDriverLocation(ride.status)) throw new ApiError(404, "Sem foto.");
     const db = await getDb();
     const [doc] = await db.select().from(s.documents).where(and(eq(s.documents.driverId, ride.driverId), eq(s.documents.kind, "selfie"), eq(s.documents.status, "approved")));
     if (!doc) throw new ApiError(404, "Sem foto.");
@@ -40,7 +44,10 @@ export const GET = route<P>(async ({ user, params }) => {
 });
 
 const cancelSchema = z.object({ reason: z.string().trim().max(300).default("") });
+const completeSchema = z.object({ reason: z.string().trim().max(200).optional() });
 const rateSchema = z.object({ stars: z.number().int().min(1).max(5), note: z.string().trim().max(500).optional() });
+// Corpo livre: lat e lng são conferidos em parseSosPoint (finitos e dentro do globo); o resto é ignorado.
+const sosSchema = z.object({ lat: z.unknown().optional(), lng: z.unknown().optional() });
 const messageSchema = z.object({ body: z.string().trim().min(1, "Escreva a mensagem.").max(500) });
 
 export const POST = route<P>(async ({ req, user, params }) => {
@@ -56,8 +63,10 @@ export const POST = route<P>(async ({ req, user, params }) => {
     case "arrive": return markArrived(ride.id, user.id);
     case "start": return startTrip(ride.id, user.id);
     case "complete": {
-      const done = await completeTrip(ride.id, user.id);
-      await audit(user.id, "ride.complete", "ride", ride.id);
+      // Corpo opcional: o motivo só é usado quando o motorista encerra longe do destino.
+      const v = (req.headers.get("content-type") ?? "").includes("application/json") ? await body(req, completeSchema) : { reason: undefined };
+      const done = await completeTrip(ride.id, user.id, { reason: v.reason });
+      await audit(user.id, "ride.complete", "ride", ride.id, v.reason ? { reason: v.reason } : undefined);
       return done;
     }
     case "rate": {
@@ -77,16 +86,15 @@ export const POST = route<P>(async ({ req, user, params }) => {
       return { ok: true };
     }
     case "emergency": {
-      if (!checkRateLimit(`sos:${user.id}:${ride.id}`, 5, 10 * 60_000)) return { ok: true, repeated: true };
-      const [ticket] = await db.insert(s.tickets).values({
-        userId: user.id, rideId: ride.id, kind: "emergencia", priority: "critical", subject: "Alerta de emergência em corrida",
-        body: `Acionado por ${as === "passenger" ? "passageiro" : "motorista"} durante a corrida.`,
-      }).returning();
-      await audit(user.id, "ride.emergency", "ride", ride.id, { ticket: ticket.id });
-      const staff = await db.select({ id: s.users.id }).from(s.users).where(eq(s.users.role, "atendente"));
-      for (const a of staff) await notify(db, a.id, "Emergência em corrida", `Chamado crítico aberto na corrida ${ride.id.slice(0, 8)}.`, "/admin/chamados");
-      publish(STAFF_CHANNEL, "ticket");
-      return { ok: true, ticketId: ticket.id };
+      // Só em corrida em andamento ou até 30 min depois de concluída (regra em shared/emergency).
+      const problem = sosProblem(ride.status, ride.endedAt);
+      if (problem) throw new ApiError(409, problem);
+      // Limite por corrida (acionamentos repetidos); o limite de alertas novos por pessoa fica em raiseEmergency.
+      if (!checkRateLimit(`sos:${user.id}:${ride.id}`, 5, 10 * 60_000)) return { ok: true, repeated: true, message: "Você já acionou o alerta agora há pouco e a equipe foi avisada. Se estiver em perigo, ligue 190." };
+      // A posição do aparelho é opcional: se vier inválida, o alerta segue sem ela.
+      const v = await body(req, sosSchema);
+      const done = await raiseEmergency({ ride, userId: user.id, as, actorPoint: parseSosPoint(v) });
+      return { ok: true, ticketId: done.ticketId, ...(done.repeated ? { repeated: true } : {}), ...(done.throttled ? { throttled: true, message: done.message } : {}) };
     }
     default: throw new ApiError(404, "Ação desconhecida.");
   }

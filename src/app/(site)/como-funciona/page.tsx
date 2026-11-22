@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { Icon } from "@/components/Icon";
-import { Dark, PageHead, Steps } from "@/components/site/Page";
-import { Reveal } from "@/components/site/Fx";
-import { RideDemo } from "@/components/site/RideDemo";
-import { StoryPhone } from "@/components/site/StoryPhone";
-import { Tech } from "@/components/site/Tech";
+import { Icon } from "@/frontend/components/Icon";
+import { Dark, PageHead, Steps } from "@/frontend/components/site/Page";
+import { Reveal } from "@/frontend/components/site/Fx";
+import { RideDemo } from "@/frontend/components/site/RideDemo";
+import { StoryPhone } from "@/frontend/components/site/StoryPhone";
+import { Tech } from "@/frontend/components/site/Tech";
 
 export const metadata = { title: "Como funciona" };
 

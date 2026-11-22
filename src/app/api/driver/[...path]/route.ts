@@ -1,20 +1,29 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gte, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lt, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { dataDir, getDb, schema as s } from "@/db";
-import { getSetting } from "@/db/seed";
-import { ApiError, audit, body, route } from "@/server/api";
-import { publish, STAFF_CHANNEL, userChannel } from "@/server/bus";
-import { activeRideFor, paymentRules, respondToOffer, rideView } from "@/server/rides";
-import { normalizePixKey, PIX_KEY_TYPES, pixKeyMatches, type PixKeyType } from "@/domain/pix";
-import { checkRateLimit } from "@/server/auth";
-import { sniffFile } from "@/server/security";
-import { withDefaultRules, DEFAULT_DRIVER_RULES, DOC_KINDS, DRIVER_TERMS_VERSION, driverProblems, vehicleProblems, type DriverRules } from "@/domain/driver-rules";
-import { findRegion } from "@/domain/geo";
-import { isValidCep, isValidCnh, isValidCpf, isValidPixKey, isValidPlate } from "@/domain/validation";
-import { lookupCep } from "@/server/verify";
+import { getDb, schema as s } from "@/database";
+import { getSetting } from "@/database/seed";
+import { ApiError, audit, body, route } from "@/backend/api";
+import { publish, STAFF_CHANNEL, userChannel } from "@/backend/bus";
+import { activeRideFor, fareForDriver, paymentRules, releaseOffers, respondToOffer, rideSummaries, rideView } from "@/backend/rides";
+import { nextRideCursor, pageParams, ridesBefore, ridesOrder } from "@/backend/pagination";
+import { startOfPeriodSp } from "@/backend/sql-time";
+import { normalizePixKey, PIX_KEY_TYPES, pixKeyMatches, type PixKeyType } from "@/shared/pix";
+import { checkRateLimit } from "@/backend/auth";
+import { reauthFields, requireReauth } from "@/backend/reauth";
+import { requestWithdrawal, subscribePlan } from "@/backend/driver-finance";
+import { sniffFile } from "@/backend/security";
+import { stripImageMetadata, uploadsDir } from "@/backend/uploads";
+import { withDefaultRules, DEFAULT_DRIVER_RULES, DOC_KINDS, DRIVER_TERMS_VERSION, driverProblems, vehicleProblems, type DriverRules } from "@/shared/driver-rules";
+import { findRegion } from "@/shared/geo";
+import { plausibleMove } from "@/shared/location-guard";
+import { isValidCep, isValidCnh, isValidCpf, isValidPlate } from "@/shared/validation";
+import { lookupCep } from "@/backend/verify";
+import { cpfDriverBlocked, cpfTaken } from "@/backend/auth";
+import { CPF_DRIVER_BLOCKED_MESSAGE } from "@/shared/account-deletion";
+import { onboardingCpfProblem } from "@/shared/account";
 
 type P = { path: string[] };
 const roles = { roles: ["driver" as const] };
@@ -39,14 +48,13 @@ async function pendingOffer(userId: string) {
     .where(and(eq(s.offers.driverId, userId), eq(s.offers.status, "pending"), gte(s.offers.expiresAt, new Date()))).limit(1);
   if (!row) return null;
   const { o, r } = row;
-  const [plan] = await db.select({ p: s.plans, until: s.drivers.planUntil }).from(s.drivers).innerJoin(s.plans, eq(s.drivers.planId, s.plans.id)).where(eq(s.drivers.userId, userId));
-  const bps = plan && plan.until && plan.until > new Date() ? plan.p.commissionBps : r.commissionBps;
-  const commissionCents = Math.round((r.grossCents * bps) / 10000);
+  // Mesma conta do aceite e da liquidação (comissão da tarifa, que o plano só reduz).
+  const { commissionBps: bps, commissionCents, driverNetCents } = await fareForDriver(db, r, userId);
   return {
     id: o.id, expiresAt: o.expiresAt, pickupDistanceM: o.pickupDistanceM, pickupEtaS: o.pickupEtaS, breakdown: o.breakdown,
     origin: { label: r.originLabel, lat: r.originLat, lng: r.originLng }, dest: { label: r.destLabel, lat: r.destLat, lng: r.destLng }, stops: r.stops,
     geometry: r.geometry, distanceM: r.distanceM, durationS: r.durationS, paymentMethod: r.paymentMethod,
-    grossCents: r.grossCents, commissionBps: bps, commissionCents, driverNetCents: r.grossCents - commissionCents, totalCents: r.totalCents,
+    grossCents: r.grossCents, commissionBps: bps, commissionCents, driverNetCents, totalCents: r.totalCents,
   };
 }
 
@@ -66,16 +74,19 @@ export const GET = route<P>(async ({ req, user, params }) => {
     const active = await activeRideFor(user.id, "driver");
     return {
       driver: driver ? { ...driver, cpf: undefined, cnh: undefined } : null, docs, vehicles, categories, regions,
+      // CPF da conta (do cadastro de passageiro), para o cadastro de motorista já vir preenchido. null em contas antigas.
+      userCpf: user.cpf ?? null,
       offer: await pendingOffer(user.id), ride: active ? await rideView(active, "driver") : null,
       balanceCents: await balance(user.id), manualLocationAllowed: manualLocationAllowed(), paymentRules: await paymentRules(db),
       driverRules: await driverRules(db), termsVersion: DRIVER_TERMS_VERSION,
-      rating: user.ratingCount ? user.ratingSum / user.ratingCount : null, ratingCount: user.ratingCount,
+      rating: driver?.ratingCount ? driver.ratingSum / driver.ratingCount : null, ratingCount: driver?.ratingCount ?? 0,
     };
   }
   if (what === "finance") {
     const period = new URL(req.url).searchParams.get("period") ?? "day";
     const trunc = period === "month" ? "month" : period === "week" ? "week" : "day";
-    const since = sql`date_trunc(${sql.raw(`'${trunc}'`)}, now())`;
+    // O dia, a semana e o mês de ganhos seguem o horário de Brasília.
+    const since = startOfPeriodSp(trunc);
     const [rides, entries, withdrawals, min] = await Promise.all([
       db.select().from(s.rides).where(and(eq(s.rides.driverId, user.id), eq(s.rides.status, "completed"), gte(s.rides.endedAt, since))).orderBy(desc(s.rides.endedAt)),
       db.select().from(s.ledger).where(eq(s.ledger.driverId, user.id)).orderBy(desc(s.ledger.createdAt)).limit(100),
@@ -95,18 +106,25 @@ export const GET = route<P>(async ({ req, user, params }) => {
     };
   }
   if (what === "history") {
-    const rides = await db.select().from(s.rides).where(eq(s.rides.driverId, user.id)).orderBy(desc(s.rides.createdAt)).limit(50);
-    return { rides: await Promise.all(rides.map((r) => rideView(r, "driver"))) };
+    // Histórico enxuto, paginado e em lote; a corrida ativa vem completa em /api/driver/state.
+    const { limit, before } = pageParams(req, 50, 100);
+    const rows = await db.select().from(s.rides).where(and(eq(s.rides.driverId, user.id), ridesBefore(before)))
+      .orderBy(...ridesOrder()).limit(limit + 1);
+    const page = rows.slice(0, limit);
+    return { rides: await rideSummaries(page, "driver"), nextBefore: nextRideCursor(page, rows.length > limit) };
   }
   if (what === "club") {
-    const [partners, saved, plans, campaigns] = await Promise.all([
+    const [partners, saved, plans, campaigns, [me]] = await Promise.all([
       db.select().from(s.partners).where(eq(s.partners.active, true)),
       db.select({ s: s.partnerSavings, name: s.partners.name }).from(s.partnerSavings).innerJoin(s.partners, eq(s.partnerSavings.partnerId, s.partners.id)).where(eq(s.partnerSavings.driverId, user.id)).orderBy(desc(s.partnerSavings.createdAt)),
       db.select().from(s.plans).where(eq(s.plans.active, true)),
       db.select().from(s.campaigns).where(and(eq(s.campaigns.active, true), eq(s.campaigns.audience, "driver"))),
+      db.select({ planId: s.drivers.planId, planUntil: s.drivers.planUntil }).from(s.drivers).where(eq(s.drivers.userId, user.id)),
     ]);
+    const current = me?.planId && me.planUntil && me.planUntil > new Date() ? { planId: me.planId, until: me.planUntil } : null;
     return {
-      partners, plans, campaigns,
+      partners, campaigns, current,
+      plans: plans.sort((x, y) => x.priceCents - y.priceCents),
       savings: saved.map((r) => ({ ...r.s, partnerName: r.name })),
       totalSavedCents: saved.reduce((a, r) => a + (r.s.originalCents - r.s.paidCents), 0),
     };
@@ -156,8 +174,10 @@ const paymentPrefsSchema = z.object({
   pixKeyType: z.enum(Object.keys(PIX_KEY_TYPES) as [PixKeyType, ...PixKeyType[]]).nullable(),
   pixKey: z.string().trim().max(120).nullable(),
   cardMachine: z.boolean(),
+  ...reauthFields,
 }).refine((v) => !v.pixKey || (v.pixKeyType && pixKeyMatches(v.pixKey, v.pixKeyType)), { message: "A chave Pix não confere com o tipo escolhido.", path: ["pixKey"] });
-const withdrawalSchema = z.object({ amountCents: z.number().int().positive(), pixKey: z.string().trim().max(120).refine(isValidPixKey, "Chave Pix inválida: use CPF, CNPJ, celular, e-mail ou chave aleatória.") });
+// A chave do saque é sempre a do perfil: se o pedido trouxer uma, ela só é conferida (nunca usada).
+const withdrawalSchema = z.object({ amountCents: z.number().int().positive(), pixKey: z.string().trim().max(120).optional(), ...reauthFields });
 const savingSchema = z.object({ partnerId: z.string().uuid(), originalCents: z.number().int().positive("Informe o preço normal."), paidCents: z.number().int().min(0) }).refine((v) => v.paidCents <= v.originalCents, "O valor pago deve ser menor que o preço normal.");
 const planSchema = z.object({ planId: z.string().uuid().nullable() });
 
@@ -167,6 +187,12 @@ export const POST = route<P>(async ({ req, user, params }) => {
 
   if (what === "onboarding") {
     const v = await body(req, onboardingSchema);
+    // A conta já tem CPF (veio do cadastro): o de motorista precisa ser o mesmo.
+    const cpfProblem = onboardingCpfProblem(user.cpf, v.cpf);
+    if (cpfProblem) throw new ApiError(400, cpfProblem);
+    if (await cpfDriverBlocked(v.cpf)) throw new ApiError(409, CPF_DRIVER_BLOCKED_MESSAGE);
+    // Conta antiga, sem CPF: o informado não pode estar em outra conta.
+    if (!user.cpf && (await cpfTaken(v.cpf, user.id))) throw new ApiError(409, "Este CPF já está em outro cadastro. Se for o seu, fale com o suporte.");
     const others = await db.select({ cpf: s.drivers.cpf, cnh: s.drivers.cnh }).from(s.drivers).where(and(or(eq(s.drivers.cpf, v.cpf), eq(s.drivers.cnh, v.cnh)), ne(s.drivers.userId, user.id)));
     if (others.some((o) => o.cpf === v.cpf)) throw new ApiError(409, "Este CPF já está em outro cadastro. Se for o seu, fale com o suporte.");
     if (others.length) throw new ApiError(409, "Esta CNH já está em outro cadastro. Se for a sua, fale com o suporte.");
@@ -190,6 +216,7 @@ export const POST = route<P>(async ({ req, user, params }) => {
       inssDeclaredAt: new Date(), termsVersion: DRIVER_TERMS_VERSION, termsAcceptedAt: new Date(),
     };
     await db.insert(s.drivers).values({ userId: user.id, ...values }).onConflictDoUpdate({ target: s.drivers.userId, set: { ...values, status: "pending" } });
+    if (!user.cpf) await db.update(s.users).set({ cpf: v.cpf }).where(eq(s.users.id, user.id));
     await db.insert(s.modalityEnrollments).values({ driverId: user.id, modalityId: "corrida-carro" }).onConflictDoNothing();
     await audit(user.id, "driver.onboarding", "driver", user.id, { termsVersion: DRIVER_TERMS_VERSION });
     publish(STAFF_CHANNEL, "driver");
@@ -211,10 +238,13 @@ export const POST = route<P>(async ({ req, user, params }) => {
     const mime = sniffFile(buf);
     const ext = mime ? MIME[mime] : null;
     if (!mime || !ext) throw new ApiError(400, "Envie JPG, PNG, WEBP ou PDF.");
-    const dir = path.join(dataDir(), "uploads");
+    // Sem EXIF (localização e aparelho de quem tirou a foto) no que fica guardado.
+    const clean = await stripImageMetadata(buf, mime);
+    if (!clean) throw new ApiError(400, "Não foi possível ler a imagem. Envie outra foto.");
+    const dir = uploadsDir();
     await fs.mkdir(dir, { recursive: true });
     const storedName = `${randomUUID()}.${ext}`;
-    await fs.writeFile(path.join(dir, storedName), buf, { mode: 0o600 });
+    await fs.writeFile(path.join(dir, storedName), clean, { mode: 0o600 });
     const [doc] = await db.insert(s.documents).values({ driverId: user.id, kind, storedName, mime }).returning();
     await audit(user.id, "document.upload", "document", doc.id, { kind });
     publish(STAFF_CHANNEL, "driver");
@@ -247,6 +277,8 @@ export const POST = route<P>(async ({ req, user, params }) => {
     if (!driver) throw new ApiError(409, "Conclua seu cadastro primeiro.");
     if (!v.online) {
       await db.update(s.drivers).set({ online: false, idleSince: null }).where(eq(s.drivers.userId, user.id));
+      // Oferta pendente não fica para depois: offline, a pessoa pode pedir corrida como passageira.
+      await releaseOffers(user.id);
       publish(STAFF_CHANNEL, "driver");
       return { online: false };
     }
@@ -254,11 +286,20 @@ export const POST = route<P>(async ({ req, user, params }) => {
     // CNH vencida não roda: a regularidade vale todos os dias, não só no cadastro.
     if (driver.cnhExpiresAt && new Date(`${driver.cnhExpiresAt}T23:59:59`) < new Date()) throw new ApiError(409, "Sua CNH venceu. Envie a CNH renovada para voltar a rodar.");
     if (v.lat === undefined || v.lng === undefined) throw new ApiError(400, "Precisamos da sua localização para ficar online.");
+    // Motorista também é passageiro: com uma corrida aberta como passageiro, não fica online.
+    if (await activeRideFor(user.id, "passenger")) throw new ApiError(409, "Você tem uma corrida em andamento como passageiro. Termine ou cancele antes de ficar online.");
     const approved = await db.select({ id: s.vehicles.id }).from(s.vehicles).where(and(eq(s.vehicles.driverId, user.id), eq(s.vehicles.status, "approved")));
     if (!approved.length) throw new ApiError(409, "Você precisa de um veículo aprovado para ficar online.");
     const regions = await db.select().from(s.regions);
     const region = findRegion({ lat: v.lat, lng: v.lng }, regions);
     if (!region) throw new ApiError(409, "Você está fora da área de atendimento da Orbi.");
+    if (!manualLocationAllowed()) {
+      const move = plausibleMove({ lat: driver.lat, lng: driver.lng, at: driver.locationAt }, { lat: v.lat, lng: v.lng });
+      if (!move.ok) {
+        await audit(user.id, "driver.location_jump", "driver", user.id, { distanceM: Math.round(move.distanceM), speedMps: Math.round(move.speedMps), to: { lat: v.lat, lng: v.lng } });
+        throw new ApiError(422, move.reason);
+      }
+    }
     await db.update(s.drivers).set({ online: true, lat: v.lat, lng: v.lng, locationAt: new Date(), regionId: region.id, idleSince: sql`coalesce(${s.drivers.idleSince}, now())` }).where(eq(s.drivers.userId, user.id));
     publish(STAFF_CHANNEL, "driver");
     return { online: true, region: region.name };
@@ -266,12 +307,28 @@ export const POST = route<P>(async ({ req, user, params }) => {
   if (what === "payment-prefs") {
     const v = await body(req, paymentPrefsSchema);
     const key = v.pixKey && v.pixKeyType ? normalizePixKey(v.pixKey, v.pixKeyType) : null;
+    const [cur] = await db.select({ pixKey: s.drivers.pixKey }).from(s.drivers).where(eq(s.drivers.userId, user.id));
+    if (!cur) throw new ApiError(409, "Conclua seu cadastro primeiro.");
+    // Trocar (ou apagar) a chave que recebe os saques exige a senha de novo: sessão roubada não desvia o dinheiro.
+    if (key !== cur.pixKey) await requireReauth(user, v);
     await db.update(s.drivers).set({ pixKey: key, pixKeyType: key ? v.pixKeyType : null, cardMachine: v.cardMachine }).where(eq(s.drivers.userId, user.id));
-    await audit(user.id, "driver.payment_prefs", "driver", user.id, { pix: !!key, cardMachine: v.cardMachine });
+    await audit(user.id, "driver.payment_prefs", "driver", user.id, { pix: !!key, pixChanged: key !== cur.pixKey, cardMachine: v.cardMachine });
     return { ok: true, pixKey: key };
   }
   if (what === "location") {
     const v = await body(req, locationSchema);
+    if (!manualLocationAllowed()) {
+      // Antifraude de GPS (fora do modo de teste): só online ou em corrida, dentro da região atendida e sem saltos impossíveis.
+      const [cur] = await db.select({ online: s.drivers.online, lat: s.drivers.lat, lng: s.drivers.lng, at: s.drivers.locationAt }).from(s.drivers).where(eq(s.drivers.userId, user.id));
+      if (!cur) throw new ApiError(409, "Conclua seu cadastro primeiro.");
+      if (!cur.online && !(await activeRideFor(user.id, "driver"))) throw new ApiError(409, "Fique online para enviar sua localização.");
+      if (!findRegion({ lat: v.lat, lng: v.lng }, await db.select().from(s.regions))) throw new ApiError(422, "Você está fora da área de atendimento da Orbi.");
+      const move = plausibleMove(cur, v);
+      if (!move.ok) {
+        await audit(user.id, "driver.location_jump", "driver", user.id, { distanceM: Math.round(move.distanceM), speedMps: Math.round(move.speedMps), to: { lat: v.lat, lng: v.lng } });
+        throw new ApiError(422, move.reason);
+      }
+    }
     await db.update(s.drivers).set({ lat: v.lat, lng: v.lng, heading: v.heading ?? null, accuracyM: v.accuracy ?? null, locationAt: new Date() }).where(eq(s.drivers.userId, user.id));
     const active = await activeRideFor(user.id, "driver");
     if (active) publish(userChannel(active.passengerId), "ride");
@@ -283,11 +340,16 @@ export const POST = route<P>(async ({ req, user, params }) => {
   }
   if (what === "withdrawals") {
     const v = await body(req, withdrawalSchema);
+    const [me] = await db.select({ pixKey: s.drivers.pixKey, pixKeyType: s.drivers.pixKeyType }).from(s.drivers).where(eq(s.drivers.userId, user.id));
+    if (!me?.pixKey || !me.pixKeyType) throw new ApiError(409, "Cadastre sua chave Pix em \"Como você recebe\" antes de pedir um saque.");
+    // O saque só vai para a chave cadastrada no perfil; uma chave diferente no pedido é recusada.
+    if (v.pixKey !== undefined && !(pixKeyMatches(v.pixKey, me.pixKeyType as PixKeyType) && normalizePixKey(v.pixKey, me.pixKeyType as PixKeyType) === me.pixKey)) {
+      throw new ApiError(400, "O saque só pode ser feito para a chave Pix cadastrada no seu perfil.");
+    }
+    await requireReauth(user, v);
     const min = await getSetting(db, "withdrawal", { minCents: 2000 });
-    if (v.amountCents < min.minCents) throw new ApiError(400, "Valor abaixo do mínimo para saque.");
-    if (v.amountCents > (await balance(user.id))) throw new ApiError(409, "Saldo insuficiente.");
-    const [row] = await db.insert(s.withdrawals).values({ driverId: user.id, ...v }).returning();
-    await db.insert(s.ledger).values({ driverId: user.id, type: "withdrawal", amountCents: -v.amountCents, description: "Saque solicitado" });
+    // Saldo conferido e débito lançado numa transação com o motorista travado: saques simultâneos não gastam o mesmo saldo.
+    const row = await requestWithdrawal(user.id, { amountCents: v.amountCents, pixKey: me.pixKey }, min.minCents);
     await audit(user.id, "withdrawal.request", "withdrawal", row.id, { amountCents: v.amountCents });
     publish(STAFF_CHANNEL, "finance");
     return row;
@@ -304,11 +366,7 @@ export const POST = route<P>(async ({ req, user, params }) => {
       await db.update(s.drivers).set({ planId: null, planUntil: null }).where(eq(s.drivers.userId, user.id));
       return { ok: true };
     }
-    const [plan] = await db.select().from(s.plans).where(and(eq(s.plans.id, v.planId), eq(s.plans.active, true)));
-    if (!plan) throw new ApiError(404, "Plano não encontrado.");
-    if ((await balance(user.id)) < plan.priceCents) throw new ApiError(409, "Saldo insuficiente para assinar este plano.");
-    await db.insert(s.ledger).values({ driverId: user.id, type: "plan", amountCents: -plan.priceCents, description: `Assinatura: ${plan.name}` });
-    await db.update(s.drivers).set({ planId: plan.id, planUntil: new Date(Date.now() + plan.periodDays * 86400_000) }).where(eq(s.drivers.userId, user.id));
+    const plan = await subscribePlan(user.id, v.planId);
     await audit(user.id, "plan.subscribe", "plan", plan.id);
     return { ok: true };
   }

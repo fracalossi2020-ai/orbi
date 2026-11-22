@@ -1,5 +1,5 @@
-import { Body, Legal, PageHead } from "@/components/site/Page";
-import { Note } from "@/components/ui";
+import { Body, Legal, PageHead } from "@/frontend/components/site/Page";
+import { Note } from "@/frontend/components/ui";
 
 export const metadata = { title: "Termos de uso" };
 

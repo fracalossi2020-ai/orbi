@@ -1,11 +1,15 @@
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { getDb, schema as s } from "@/db";
-import { ApiError, audit, body, route } from "@/server/api";
-import { publish, STAFF_CHANNEL } from "@/server/bus";
-import { checkRateLimit, decryptTotp, encryptTotp, readSession, revokeSessions, verifyPassword } from "@/server/auth";
-import { newRecoveryCodes, newTotpSecret, otpauthUrl, verifyTotp } from "@/server/security";
-import { STAFF } from "@/domain/permissions";
+import { getDb, schema as s } from "@/database";
+import { ApiError, audit, body, route } from "@/backend/api";
+import { publish, STAFF_CHANNEL } from "@/backend/bus";
+import { CPF_DRIVER_BLOCKED_MESSAGE } from "@/shared/account-deletion";
+import { authSecret, checkRateLimit, cpfDriverBlocked, decryptTotp, encryptTotp, readSession, revokeSessions, verifyPassword } from "@/backend/auth";
+import { newRecoveryCodes, newTotpSecret, otpauthUrl, verifyTotp } from "@/backend/security";
+import { STAFF } from "@/shared/permissions";
+import { becomeDriverProblem } from "@/shared/account";
+import { requireReauth, sendReauthCode } from "@/backend/reauth";
+import { maskEmail } from "@/backend/mail";
 
 const ticketSchema = z.object({
   kind: z.enum(["ajuda", "reclamacao", "sugestao", "ocorrencia"]),
@@ -15,7 +19,8 @@ const ticketSchema = z.object({
 });
 
 const codeSchema = z.object({ code: z.string().trim().regex(/^\d{6}$/, "Digite os 6 números do aplicativo.") });
-const disableSchema = codeSchema.extend({ password: z.string().min(1, "Informe sua senha.") });
+// Conta com senha: a senha. Conta do Google (sem senha própria): o código enviado ao e-mail (mesmo reauth do saque), em emailCode.
+const disableSchema = codeSchema.extend({ password: z.string().optional(), emailCode: z.string().trim().regex(/^\d{6}$/, "Digite os 6 números enviados ao seu e-mail.").optional() });
 const revokeSchema = z.object({ id: z.string().uuid().optional(), others: z.boolean().optional() });
 
 /** Nome curto do aparelho a partir do navegador, para a lista de sessões. */
@@ -51,7 +56,12 @@ export const POST = route<{ what: string }>(async ({ req, user, params }) => {
   if (params.what === "tickets") {
     if (!checkRateLimit(`ticket:${user.id}`, 10, 60 * 60_000)) throw new ApiError(429, "Muitos chamados em pouco tempo. Aguarde um pouco.");
     const v = await body(req, ticketSchema);
-    // Atendimento prioritário é um dos compromissos com motoristas.
+    // Chamados de motoristas entram com prioridade alta na fila.
+    // O chamado só pode apontar para uma corrida da própria pessoa (como passageira ou como motorista).
+    if (v.rideId) {
+      const [ride] = await db.select({ passengerId: s.rides.passengerId, driverId: s.rides.driverId }).from(s.rides).where(eq(s.rides.id, v.rideId));
+      if (!ride || (ride.passengerId !== user.id && ride.driverId !== user.id)) throw new ApiError(404, "Corrida não encontrada.");
+    }
     const priority = v.kind === "ocorrencia" || user.role === "driver" ? "high" : "normal";
     const [row] = await db.insert(s.tickets).values({ ...v, rideId: v.rideId ?? null, userId: user.id, priority }).returning();
     await audit(user.id, "ticket.create", "ticket", row.id, { kind: v.kind });
@@ -61,6 +71,20 @@ export const POST = route<{ what: string }>(async ({ req, user, params }) => {
   if (params.what === "notifications") {
     await db.update(s.notifications).set({ readAt: new Date() }).where(and(eq(s.notifications.userId, user.id), isNull(s.notifications.readAt)));
     return { ok: true };
+  }
+
+  // Passageiro vira motorista: a conta passa a ter o app de motorista (cadastro em /motorista) e continua podendo pedir corridas.
+  // A sessão segue aberta; a pessoa não precisa entrar de novo.
+  if (params.what === "become-driver") {
+    const problem = becomeDriverProblem(user.role);
+    if (problem) throw new ApiError(problem.status, problem.message);
+    if (!checkRateLimit(`become-driver:${user.id}`, 5, 60 * 60_000)) throw new ApiError(429, "Muitas tentativas. Aguarde uma hora.");
+    // Bloqueio de 180 dias do CPF de motorista excluído: vale só para virar motorista de novo.
+    if (user.cpf && (await cpfDriverBlocked(user.cpf))) throw new ApiError(409, CPF_DRIVER_BLOCKED_MESSAGE);
+    const [done] = await db.update(s.users).set({ role: "driver" }).where(and(eq(s.users.id, user.id), eq(s.users.role, "passenger"))).returning({ role: s.users.role });
+    if (!done) throw new ApiError(409, "Não foi possível mudar a conta agora. Atualize a página.");
+    await audit(user.id, "account.become_driver", "user", user.id, { from: "passenger", to: "driver" });
+    return { role: "driver" as const };
   }
 
   // Encerrar uma sessão (um aparelho) ou todas as outras.
@@ -75,6 +99,11 @@ export const POST = route<{ what: string }>(async ({ req, user, params }) => {
   }
 
   // Verificação em duas etapas: 1) gera o segredo e mostra o QR Code; 2) confirma com um código; só então vale.
+  if (params.what === "reauth-code") {
+    // Contas do Google (sem senha própria): código no e-mail atual, antes de saque, troca da chave Pix ou exclusão da conta.
+    await sendReauthCode(user);
+    return { ok: true, sentTo: maskEmail(user.email!) };
+  }
   if (params.what === "mfa-start") {
     if (user.totpEnabledAt) throw new ApiError(409, "A verificação em duas etapas já está ativa.");
     if (!checkRateLimit(`mfa-start:${user.id}`, 10, 60 * 60_000)) throw new ApiError(429, "Muitas tentativas. Aguarde uma hora.");
@@ -89,7 +118,7 @@ export const POST = route<{ what: string }>(async ({ req, user, params }) => {
     const v = await body(req, codeSchema);
     const step = verifyTotp(decryptTotp(user.totpSecret), v.code, null);
     if (step === null) throw new ApiError(400, "Código incorreto. Confira se o relógio do celular está certo e tente de novo.");
-    const { codes, hashes } = newRecoveryCodes();
+    const { codes, hashes } = newRecoveryCodes(authSecret());
     await db.update(s.users).set({ totpEnabledAt: new Date(), totpLastStep: step, recoveryCodes: hashes }).where(eq(s.users.id, user.id));
     const cur = await readSession();
     if (cur) await db.update(s.sessions).set({ mfaAt: new Date() }).where(eq(s.sessions.id, cur.session.id));
@@ -104,7 +133,7 @@ export const POST = route<{ what: string }>(async ({ req, user, params }) => {
     const v = await body(req, codeSchema);
     const step = verifyTotp(decryptTotp(user.totpSecret), v.code, user.totpLastStep);
     if (step === null) throw new ApiError(400, "Código incorreto.");
-    const { codes, hashes } = newRecoveryCodes();
+    const { codes, hashes } = newRecoveryCodes(authSecret());
     await db.update(s.users).set({ recoveryCodes: hashes, totpLastStep: step }).where(eq(s.users.id, user.id));
     await audit(user.id, "mfa.recovery_new", "user", user.id);
     return { recoveryCodes: codes };
@@ -115,7 +144,11 @@ export const POST = route<{ what: string }>(async ({ req, user, params }) => {
     if (!user.totpEnabledAt || !user.totpSecret) throw new ApiError(400, "A verificação em duas etapas não está ativa.");
     if (!checkRateLimit(`mfa-disable:${user.id}`, 5)) throw new ApiError(429, "Muitas tentativas. Aguarde 15 minutos.");
     const v = await body(req, disableSchema);
-    if (!(await verifyPassword(v.password, user.passwordHash))) throw new ApiError(400, "Senha incorreta.");
+    if (user.googleSub) await requireReauth(user, { code: v.emailCode });
+    else {
+      if (!v.password) throw new ApiError(400, "Informe sua senha.");
+      if (!(await verifyPassword(v.password, user.passwordHash))) throw new ApiError(400, "Senha incorreta.");
+    }
     if (verifyTotp(decryptTotp(user.totpSecret), v.code, user.totpLastStep) === null) throw new ApiError(400, "Código incorreto.");
     await db.update(s.users).set({ totpEnabledAt: null, totpSecret: null, totpLastStep: null, recoveryCodes: null }).where(eq(s.users.id, user.id));
     await audit(user.id, "mfa.disable", "user", user.id);

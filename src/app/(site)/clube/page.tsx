@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { Club } from "@/components/site/Club";
-import { Dark } from "@/components/site/Page";
+import { Club } from "@/frontend/components/site/Club";
+import { Dark } from "@/frontend/components/site/Page";
 
 export const metadata = { title: "Clube Orbi" };
 

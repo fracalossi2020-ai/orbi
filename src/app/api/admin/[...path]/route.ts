@@ -1,22 +1,29 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { DEFAULT_SCHEDULE } from "@/domain/schedule";
-import { DEFAULT_PAYMENT_RULES } from "@/domain/payment-methods";
-import { withDefaultRules, DEFAULT_DRIVER_RULES, DOC_INFO, DOC_KINDS, type DriverRules } from "@/domain/driver-rules";
-import { and, desc, eq, gte, inArray, isNull, ne, sql } from "drizzle-orm";
+import { DEFAULT_SCHEDULE } from "@/shared/schedule";
+import { DEFAULT_PAYMENT_RULES } from "@/shared/payment-methods";
+import { withDefaultRules, DEFAULT_DRIVER_RULES, DOC_INFO, DOC_KINDS, type DriverRules } from "@/shared/driver-rules";
+import { and, desc, eq, gte, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { dataDir, getDb, schema as s } from "@/db";
-import { getSetting } from "@/db/seed";
-import { ApiError, assertCan, audit, body, route } from "@/server/api";
-import { hashPassword, revokeSessions } from "@/server/auth";
-import { fileHeaders, passwordProblem } from "@/server/security";
-import { emailDomainExists } from "@/server/verify";
-import { notify, rideView } from "@/server/rides";
-import { publish, userChannel } from "@/server/bus";
-import { STAFF } from "@/domain/permissions";
-import { DEFAULT_WEIGHTS } from "@/domain/dispatch";
-import { brl } from "@/domain/pricing";
+import { dataDir, getDb, schema as s } from "@/database";
+import { getSetting } from "@/database/seed";
+import { ApiError, assertCan, audit, body, requireUuid, route } from "@/backend/api";
+import { cpfHmac, hashPassword, revokeSessions } from "@/backend/auth";
+import { fileHeaders, passwordProblem } from "@/backend/security";
+import { emailDomainExists } from "@/backend/verify";
+import { cancelScheduledRides, notify, rideSummaries, staffCancelRide, staffCloseRide } from "@/backend/rides";
+import { nextRideCursor, pageParams, ridesBefore, ridesOrder } from "@/backend/pagination";
+import { dayEndSp, dayLabelSp, dayStartSp } from "@/backend/sql-time";
+import { isIsoDay } from "@/shared/iso-day";
+import { staffChargeProblem } from "@/shared/ride-resolution";
+import { settleWithdrawal } from "@/backend/driver-finance";
+import { publish, STAFF_CHANNEL, userChannel } from "@/backend/bus";
+import { STAFF } from "@/shared/permissions";
+import { staffUserView } from "@/shared/account";
+import { DEFAULT_WEIGHTS } from "@/shared/dispatch";
+import { brl } from "@/shared/pricing";
+import { isValidCpf } from "@/shared/validation";
 
 type P = { path: string[] };
 const roles = { roles: STAFF };
@@ -46,9 +53,11 @@ export const GET = route<P>(async ({ req, user, params }) => {
         db.select({ n: count }).from(s.withdrawals).where(eq(s.withdrawals.status, "requested")),
       ]);
       const daily = await db.select({
-        day: sql<string>`to_char(${s.rides.endedAt}, 'YYYY-MM-DD')`, rides: count, gross: sql<number>`coalesce(sum(${s.rides.grossCents}),0)::int`,
+        day: dayLabelSp(s.rides.endedAt), rides: count, gross: sql<number>`coalesce(sum(${s.rides.grossCents}),0)::int`,
       }).from(s.rides).where(and(eq(s.rides.status, "completed"), gte(s.rides.endedAt, sql`now() - interval '14 days'`))).groupBy(sql`1`).orderBy(sql`1`);
+      const [openEmergencies] = await db.select({ n: count }).from(s.emergencies).where(isNull(s.emergencies.reviewedAt));
       return {
+        openEmergencies: openEmergencies.n,
         drivers: drivers[0].n, driversOnline: online[0].n, passengers: passengers[0].n, ridesCompleted: rides[0].n, ridesCancelled: cancelled[0].n,
         pendingDrivers: pendingDrivers[0].n, openTickets: openTickets[0].n, pendingWithdrawals: pendingWithdrawals[0].n,
         grossCents: money[0].gross, commissionCents: money[0].commission, feesCents: money[0].fees, discountsCents: money[0].discounts,
@@ -58,7 +67,7 @@ export const GET = route<P>(async ({ req, user, params }) => {
     case "users": {
       assertCan(user, "users", "read");
       const rows = await db.select().from(s.users).orderBy(desc(s.users.createdAt)).limit(300);
-      return { rows: rows.map(({ passwordHash: _omit, ...u }) => u) };
+      return { rows: rows.map((u) => staffUserView(u)) };
     }
     case "drivers": {
       assertCan(user, "drivers", "read");
@@ -71,7 +80,7 @@ export const GET = route<P>(async ({ req, user, params }) => {
       return { rows: rows.map(({ d, u }) => ({
         id: d.userId, name: u.name, email: u.email, phone: u.phone, status: d.status, online: d.online, cpf: d.cpf, cnh: d.cnh, ridesTotal: d.ridesTotal,
         address: d.addressCep ? `${d.addressStreet}, ${d.addressNumber}${d.addressComplement ? ` (${d.addressComplement})` : ""} · ${d.addressDistrict} · ${d.addressCity}/${d.addressState} · CEP ${d.addressCep}` : null, addressVerified: d.addressVerified,
-        rating: u.ratingCount ? u.ratingSum / u.ratingCount : null, reviewNote: d.reviewNote,
+        rating: d.ratingCount ? d.ratingSum / d.ratingCount : null, reviewNote: d.reviewNote,
         birthDate: d.birthDate, cnhCategory: d.cnhCategory, cnhFirstLicenseAt: d.cnhFirstLicenseAt, cnhExpiresAt: d.cnhExpiresAt, cnhEar: d.cnhEar,
         inss: !!d.inssDeclaredAt, termsVersion: d.termsVersion, termsAcceptedAt: d.termsAcceptedAt,
         docs: docs.filter((x) => x.driverId === d.userId).map((x) => ({ id: x.id, kind: x.kind, status: x.status })),
@@ -87,6 +96,7 @@ export const GET = route<P>(async ({ req, user, params }) => {
     case "documents": {
       assertCan(user, "documents", "read");
       if (arg && sub === "file") {
+        requireUuid(arg, "Documento não encontrado.");
         const [doc] = await db.select().from(s.documents).where(eq(s.documents.id, arg));
         if (!doc) throw new ApiError(404, "Documento não encontrado.");
         await audit(user.id, "document.view", "document", doc.id);
@@ -98,8 +108,11 @@ export const GET = route<P>(async ({ req, user, params }) => {
     }
     case "rides": {
       assertCan(user, "rides", "read");
-      const rows = await db.select().from(s.rides).orderBy(desc(s.rides.createdAt)).limit(200);
-      return { rows: await Promise.all(rows.map(async (r) => ({ ...(await rideView(r, "staff")), commissionCents: r.commissionCents, cancelReason: r.cancelReason }))) };
+      // Lista enxuta, paginada e em lote (sem trajeto, chat nem posição ao vivo).
+      const { limit, before } = pageParams(req, 200, 200);
+      const rows = await db.select().from(s.rides).where(ridesBefore(before)).orderBy(...ridesOrder()).limit(limit + 1);
+      const page = rows.slice(0, limit);
+      return { rows: await rideSummaries(page, "staff"), nextBefore: nextRideCursor(page, rows.length > limit) };
     }
     case "payments": {
       assertCan(user, "payments", "read");
@@ -108,6 +121,13 @@ export const GET = route<P>(async ({ req, user, params }) => {
         db.select({ w: s.withdrawals, name: s.users.name }).from(s.withdrawals).innerJoin(s.users, eq(s.withdrawals.driverId, s.users.id)).orderBy(desc(s.withdrawals.createdAt)).limit(200),
       ]);
       return { payments, withdrawals: withdrawals.map((r) => ({ ...r.w, driverName: r.name })) };
+    }
+    case "emergencies": {
+      assertCan(user, "tickets", "read");
+      const rows = await db.select({ e: s.emergencies, name: s.users.name, origin: s.rides.originLabel, originLat: s.rides.originLat, originLng: s.rides.originLng, dest: s.rides.destLabel, status: s.rides.status })
+        .from(s.emergencies).innerJoin(s.users, eq(s.emergencies.triggeredBy, s.users.id)).innerJoin(s.rides, eq(s.emergencies.rideId, s.rides.id))
+        .orderBy(desc(s.emergencies.createdAt)).limit(200);
+      return { rows: rows.map((r) => ({ ...r.e, userName: r.name, originLabel: r.origin, originLat: r.originLat, originLng: r.originLng, destLabel: r.dest, rideStatus: r.status })) };
     }
     case "tickets": {
       assertCan(user, "tickets", "read");
@@ -118,13 +138,15 @@ export const GET = route<P>(async ({ req, user, params }) => {
       assertCan(user, "reports", "read");
       const from = url.searchParams.get("from");
       const to = url.searchParams.get("to");
-      const fromD = from ? new Date(from) : new Date(Date.now() - 30 * 86400_000);
-      const toD = to ? new Date(`${to}T23:59:59`) : new Date();
+      // Dias em horário de Brasília: de 00:00 do primeiro dia até o fim do último (início do dia seguinte, exclusivo).
+      if ((from && !isIsoDay(from)) || (to && !isIsoDay(to))) throw new ApiError(400, "Data inválida. Use o formato AAAA-MM-DD.");
+      const fromCond = sql`${s.rides.endedAt} >= ${from ? dayStartSp(from) : sql`now() - interval '30 days'`}`;
+      const toCond = to ? sql`${s.rides.endedAt} < ${dayEndSp(to)}` : sql`${s.rides.endedAt} <= now()`;
       const rows = await db.select({
-        day: sql<string>`to_char(${s.rides.endedAt}, 'YYYY-MM-DD')`, rides: count,
+        day: dayLabelSp(s.rides.endedAt), rides: count,
         gross: sql<number>`sum(${s.rides.grossCents})::int`, commission: sql<number>`sum(${s.rides.commissionCents})::int`,
         fees: sql<number>`sum(${s.rides.serviceFeeCents})::int`, discounts: sql<number>`sum(${s.rides.discountCents})::int`, net: sql<number>`sum(${s.rides.driverNetCents})::int`,
-      }).from(s.rides).where(and(eq(s.rides.status, "completed"), gte(s.rides.endedAt, fromD), sql`${s.rides.endedAt} <= ${toD}`)).groupBy(sql`1`).orderBy(sql`1`);
+      }).from(s.rides).where(and(eq(s.rides.status, "completed"), fromCond, toCond)).groupBy(sql`1`).orderBy(sql`1`);
       if (url.searchParams.get("format") === "csv") {
         const csv = ["dia;corridas;bruto;comissao;taxas;descontos;liquido_motoristas", ...rows.map((r) => [r.day, r.rides, r.gross, r.commission, r.fees, r.discounts, r.net].map((v, i) => (i < 2 ? v : (Number(v) / 100).toFixed(2).replace(".", ","))).join(";"))].join("\n");
         await audit(user.id, "report.export", "report");
@@ -154,9 +176,12 @@ const docReviewSchema = z.object({ status: z.enum(["approved", "rejected"]), not
 const vehicleReviewSchema = z.object({ status: z.enum(["approved", "rejected"]) });
 const userStatusSchema = z.object({ status: z.enum(["active", "suspended"]) });
 const ticketSchema = z.object({ status: z.enum(["open", "in_progress", "closed"]).optional(), response: z.string().trim().max(4000).optional() });
+const emergencyReviewSchema = z.object({ note: z.string().trim().min(3, "Escreva uma nota sobre a análise.").max(2000) });
 const withdrawalSchema = z.object({ status: z.enum(["paid", "rejected"]) });
+// Resolver corrida presa: o motivo é obrigatório e vai para a auditoria. Encerrar cobra o valor estimado ou o informado (em centavos).
+const rideResolveSchema = z.object({ reason: z.string().trim().min(5, "Escreva o motivo (pelo menos 5 caracteres).").max(300), amountCents: z.number().int().positive().optional() });
 const staffSchema = z.object({
-  name: z.string().trim().min(3, "Informe o nome."), email: z.string().trim().toLowerCase().email("E-mail inválido."),
+  name: z.string().trim().min(3, "Informe o nome.").max(80, "O nome pode ter até 80 caracteres."), email: z.string().trim().toLowerCase().email("E-mail inválido."),
   password: z.string().min(10, "A senha precisa de pelo menos 10 caracteres."), role: z.enum(["admin", "gestor", "atendente"]),
 });
 const positive = z.number().min(0).max(1000);
@@ -185,7 +210,8 @@ const settingsSchema = z.object({
 
 export const POST = route<P>(async ({ req, user, params }) => {
   const db = await getDb();
-  const [what, id] = params.path;
+  const [what, id, sub] = params.path;
+  if (["drivers", "documents", "vehicles", "users", "tickets", "emergencies", "withdrawals", "rides"].includes(what)) requireUuid(id);
   switch (what) {
     case "drivers": {
       assertCan(user, "drivers", "write");
@@ -193,7 +219,7 @@ export const POST = route<P>(async ({ req, user, params }) => {
       if (v.status === "approved") {
         const docs = await db.select().from(s.documents).where(eq(s.documents.driverId, id)).orderBy(desc(s.documents.createdAt));
         const rules = await getSetting<Partial<DriverRules>>(db, "driverRules", DEFAULT_DRIVER_RULES).then(withDefaultRules);
-        // Quem cadastrou moto precisa também do certificado do curso de mototaxista (Resolução Contran 410/2012).
+        // Quem cadastrou moto precisa também do certificado do curso de mototaxista (Resolução CONTRAN 930/2022).
         const motoVehicles = await db.select({ id: s.vehicles.id }).from(s.vehicles).innerJoin(s.categories, eq(s.vehicles.categoryId, s.categories.id))
           .where(and(eq(s.vehicles.driverId, id), eq(s.categories.modalityId, "corrida-moto")));
         const needed = motoVehicles.length && !rules.requiredDocs.includes("curso_mototaxi") ? [...rules.requiredDocs, "curso_mototaxi" as const] : rules.requiredDocs;
@@ -241,9 +267,38 @@ export const POST = route<P>(async ({ req, user, params }) => {
       await db.update(s.users).set({ status: v.status }).where(eq(s.users.id, id));
       if (v.status === "suspended") {
         await db.update(s.drivers).set({ online: false }).where(eq(s.drivers.userId, id));
+        // Conta suspensa não viaja: as corridas agendadas dela são canceladas (sem cobrança) e o cupom volta.
+        await cancelScheduledRides(id, "Conta suspensa");
         await revokeSessions(id);
       }
       await audit(user.id, `user.${v.status}`, "user", id);
+      return { ok: true };
+    }
+    // CPF usado por outra pessoa (o cadastro não liga o número ao titular): o administrador libera o CPF
+    // de uma conta de passageiro, depois de conferir os documentos do titular pelo atendimento.
+    case "cpf-release": {
+      assertCan(user, "users", "write");
+      if (user.role !== "admin") throw new ApiError(403, "Só um administrador libera CPF.");
+      const v = await body(req, z.object({ cpf: z.string().transform((x) => x.replace(/\D/g, "")).refine(isValidCpf, "CPF inválido."), note: z.string().trim().min(3, "Diga o motivo (por exemplo, o número do chamado).").max(500) }));
+      const [driver] = await db.select({ id: s.drivers.userId }).from(s.drivers).where(eq(s.drivers.cpf, v.cpf));
+      if (driver) throw new ApiError(409, "Este CPF está num cadastro de motorista. Revise o cadastro em Motoristas.");
+      const [holder] = await db.select({ id: s.users.id, role: s.users.role }).from(s.users).where(eq(s.users.cpf, v.cpf));
+      if (!holder) throw new ApiError(404, "Nenhuma conta usa este CPF.");
+      if (holder.role !== "passenger") throw new ApiError(409, "Só o CPF de conta de passageiro é liberado por aqui.");
+      await db.update(s.users).set({ cpf: null }).where(eq(s.users.id, holder.id));
+      await audit(user.id, "user.cpf_release", "user", holder.id, { note: v.note });
+      await notify(db, holder.id, "CPF removido da conta", "O CPF desta conta foi contestado pelo titular e removido. Fale com o atendimento se for um engano.");
+      return { ok: true };
+    }
+    // Libera o bloqueio de 180 dias do CPF de motorista excluído (deleted_cpf_blocks), para a pessoa poder voltar a ser motorista.
+    // Só administrador, com motivo obrigatório; o CPF não vai para a auditoria (só o motivo).
+    case "cpf-block-release": {
+      assertCan(user, "users", "write");
+      if (user.role !== "admin") throw new ApiError(403, "Só um administrador libera o bloqueio de CPF.");
+      const v = await body(req, z.object({ cpf: z.string().transform((x) => x.replace(/\D/g, "")).refine(isValidCpf, "CPF inválido."), note: z.string().trim().min(5, "Diga o motivo (pelo menos 5 caracteres).").max(500) }));
+      const removed = await db.delete(s.deletedCpfBlocks).where(eq(s.deletedCpfBlocks.cpfHmac, cpfHmac(v.cpf))).returning({ h: s.deletedCpfBlocks.cpfHmac });
+      if (!removed.length) throw new ApiError(404, "Este CPF não tem bloqueio de motorista.");
+      await audit(user.id, "user.cpf_block_release", "cpf_block", null, { note: v.note });
       return { ok: true };
     }
     case "staff": {
@@ -258,6 +313,43 @@ export const POST = route<P>(async ({ req, user, params }) => {
       await audit(user.id, "staff.create", "user", row.id, { role: v.role });
       return { id: row.id };
     }
+    // Corrida presa: a equipe encerra (cobra o estimado ou o valor informado) ou cancela (sem cobrança). Admin e gestor.
+    case "rides": {
+      assertCan(user, "rides", "write");
+      const v = await body(req, rideResolveSchema);
+      if (sub === "close") {
+        if (v.amountCents !== undefined) {
+          const [r] = await db.select({ totalCents: s.rides.totalCents }).from(s.rides).where(eq(s.rides.id, id));
+          if (!r) throw new ApiError(404, "Corrida não encontrada.");
+          const problem = staffChargeProblem(v.amountCents, r.totalCents);
+          if (problem) throw new ApiError(400, problem);
+        }
+        const out = await staffCloseRide(id, { amountCents: v.amountCents, reason: v.reason });
+        await audit(user.id, "ride.staff_close", "ride", id, { reason: v.reason, chargedCents: out.chargedCents, estimatedCents: out.estimatedCents });
+        return { ok: true, chargedCents: out.chargedCents };
+      }
+      if (sub === "cancel") {
+        if (v.amountCents !== undefined) throw new ApiError(400, "Cancelar não cobra: não informe valor.");
+        await staffCancelRide(id, v.reason);
+        await audit(user.id, "ride.staff_cancel", "ride", id, { reason: v.reason });
+        return { ok: true };
+      }
+      throw new ApiError(404, "Ação desconhecida.");
+    }
+    case "emergencies": {
+      assertCan(user, "tickets", "write");
+      const v = await body(req, emergencyReviewSchema);
+      // Só analisa uma vez: o UPDATE exige alerta ainda aberto, e uma segunda análise não sobrescreve a primeira.
+      const [row] = await db.update(s.emergencies).set({ reviewedAt: new Date(), reviewedBy: user.id, reviewNote: v.note }).where(and(eq(s.emergencies.id, id), isNull(s.emergencies.reviewedAt))).returning();
+      if (!row) {
+        const [exists] = await db.select({ id: s.emergencies.id }).from(s.emergencies).where(eq(s.emergencies.id, id));
+        throw new ApiError(exists ? 409 : 404, exists ? "Esta ocorrência já foi analisada." : "Ocorrência não encontrada.");
+      }
+      if (row.ticketId) await db.update(s.tickets).set({ status: "closed", assignedTo: user.id }).where(eq(s.tickets.id, row.ticketId));
+      await audit(user.id, "emergency.review", "emergency", id);
+      publish(STAFF_CHANNEL, "emergency");
+      return row;
+    }
     case "tickets": {
       assertCan(user, "tickets", "write");
       const v = await body(req, ticketSchema);
@@ -270,11 +362,8 @@ export const POST = route<P>(async ({ req, user, params }) => {
     case "withdrawals": {
       assertCan(user, "payments", "write");
       const v = await body(req, withdrawalSchema);
-      const [row] = await db.update(s.withdrawals).set({ status: v.status, reviewedBy: user.id }).where(and(eq(s.withdrawals.id, id), eq(s.withdrawals.status, "requested"))).returning();
-      if (!row) throw new ApiError(409, "Este saque já foi tratado.");
-      if (v.status === "rejected") {
-        await db.insert(s.ledger).values({ driverId: row.driverId, type: "withdrawal_reversal", amountCents: row.amountCents, description: "Saque recusado: valor devolvido ao saldo" });
-      }
+      // Transação com trava do motorista; pagar com saldo negativo é recusado (ver settleWithdrawal).
+      const row = await settleWithdrawal(id, v.status, user.id);
       await audit(user.id, `withdrawal.${v.status}`, "withdrawal", id, { amountCents: row.amountCents });
       await notify(db, row.driverId, v.status === "paid" ? "Saque pago" : "Saque recusado", `Valor: ${brl(row.amountCents)}`, "/motorista/ganhos");
       return { ok: true };

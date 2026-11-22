@@ -1,11 +1,11 @@
 "use client";
 import Link from "next/link";
-import { PageTitle } from "@/components/app/AppShell";
-import { Note, Spinner, useLive } from "@/components/ui";
-import { brl } from "@/domain/pricing";
+import { PageTitle } from "@/frontend/components/app/AppShell";
+import { Note, Spinner, useLive } from "@/frontend/components/ui";
+import { brl } from "@/shared/pricing";
 
 type Dash = {
-  drivers: number; driversOnline: number; passengers: number; ridesCompleted: number; ridesCancelled: number; pendingDrivers: number; openTickets: number; pendingWithdrawals: number;
+  drivers: number; driversOnline: number; passengers: number; ridesCompleted: number; ridesCancelled: number; pendingDrivers: number; openTickets: number; openEmergencies: number; pendingWithdrawals: number;
   grossCents: number; commissionCents: number; feesCents: number; discountsCents: number; tariffsUnreviewed: number; daily: { day: string; rides: number; gross: number }[];
 };
 
@@ -37,6 +37,11 @@ export default function Dashboard() {
   return (
     <>
       <PageTitle sub="Números reais da plataforma, atualizados em tempo real.">Indicadores</PageTitle>
+      {data.openEmergencies > 0 && (
+        <div className="mb-4" role="alert" data-testid="sos-banner">
+          <Note tone="danger"><strong>{data.openEmergencies} alerta{data.openEmergencies > 1 ? "s" : ""} de emergência sem análise.</strong> <Link className="font-semibold underline" href="/admin/emergencias">Ver ocorrências.</Link></Note>
+        </div>
+      )}
       {data.tariffsUnreviewed > 0 && <div className="mb-4"><Note tone="warn">{data.tariffsUnreviewed} tarifa{data.tariffsUnreviewed > 1 ? "s" : ""} com valores iniciais. <Link className="font-semibold underline" href="/admin/tarifas">Revise antes de operar.</Link></Note></div>}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Tile label="Motoristas" value={data.drivers} href="/admin/motoristas" />

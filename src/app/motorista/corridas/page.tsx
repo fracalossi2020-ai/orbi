@@ -1,7 +1,7 @@
 "use client";
-import { PageTitle } from "@/components/app/AppShell";
-import { Badge, dateTime, Empty, km, METHOD_LABEL, Spinner, useLive } from "@/components/ui";
-import { brl } from "@/domain/pricing";
+import { PageTitle } from "@/frontend/components/app/AppShell";
+import { Badge, dateTime, Empty, km, METHOD_LABEL, Spinner, useLive } from "@/frontend/components/ui";
+import { brl } from "@/shared/pricing";
 
 type Ride = { id: string; status: string; statusLabel: string; createdAt: string; origin: { label: string }; dest: { label: string }; distanceM: number; grossCents: number; commissionCents: number; driverNetCents: number; paymentMethod: string; myRating: number | null };
 

@@ -1,4 +1,4 @@
-import { HelpCenter } from "@/components/site/HelpCenter";
+import { HelpCenter } from "@/frontend/components/site/HelpCenter";
 
 export const metadata = { title: "Central de ajuda", description: "Respostas sobre viagens, pagamento, segurança, motoristas e conta na Orbi." };
 

@@ -1,5 +1,5 @@
 "use client";
-import { AppShell } from "@/components/app/AppShell";
+import { AppShell } from "@/frontend/components/app/AppShell";
 
 const NAV = [
   { href: "/motorista", label: "Dirigir", icon: "steering" },

@@ -1,19 +1,19 @@
 import Link from "next/link";
 import { eq } from "drizzle-orm";
-import { Icon } from "@/components/Icon";
-import { OrbiMark } from "@/components/OrbiMark";
-import { CoverageMap } from "@/components/site/CoverageMap";
-import { OrbiStory } from "@/components/site/OrbiStory";
-import { Reveal } from "@/components/site/Fx";
-import { Dark, PageHead } from "@/components/site/Page";
-import { getDb, schema as s } from "@/db";
+import { Icon } from "@/frontend/components/Icon";
+import { OrbiMark } from "@/frontend/components/OrbiMark";
+import { CoverageMap } from "@/frontend/components/site/CoverageMap";
+import { OrbiStory } from "@/frontend/components/site/OrbiStory";
+import { Reveal } from "@/frontend/components/site/Fx";
+import { Dark, PageHead } from "@/frontend/components/site/Page";
+import { getDb, schema as s } from "@/database";
 
 export const metadata = { title: "A empresa" };
 
 const VALUES = [
   ["scale", "Respeito", "Motorista é parceiro do negócio. Regras claras, atendimento prioritário e nenhuma surpresa no valor."],
   ["receipt", "Transparência", "Passageiro vê o preço antes de pedir. Motorista vê bruto, comissão e líquido antes de aceitar."],
-  ["shield", "Confiança", "Documentos validados, viagem compartilhável e um canal de emergência acompanhado por pessoas."],
+  ["shield", "Confiança", "Documentos validados, viagem compartilhável e botão de emergência que liga para o 190 com a placa e o local na tela (a Orbi recebe o alerta, mas não é um plantão 24 horas)."],
 ] as const;
 
 async function areas() {

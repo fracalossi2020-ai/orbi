@@ -1,14 +1,15 @@
 "use client";
+import Link from "next/link";
 import { use, useMemo, useState } from "react";
-import type { ScheduleRules } from "@/domain/schedule";
-import { DOC_INFO, DOC_KINDS, type DriverRules } from "@/domain/driver-rules";
+import type { ScheduleRules } from "@/shared/schedule";
+import { DOC_INFO, DOC_KINDS, type DriverRules } from "@/shared/driver-rules";
 import { notFound } from "next/navigation";
-import { PageTitle } from "@/components/app/AppShell";
-import { Crud, DataTable, type Row } from "@/components/app/Crud";
-import { api, Badge, dateTime, Empty, ErrorNote, Field, km, METHOD_LABEL, Note, Spinner, useAction, useLive } from "@/components/ui";
-import { can } from "@/domain/permissions";
-import { brl } from "@/domain/pricing";
-import { WEIGHT_LABELS, type DispatchWeights } from "@/domain/dispatch";
+import { PageTitle } from "@/frontend/components/app/AppShell";
+import { Crud, DataTable, type Row } from "@/frontend/components/app/Crud";
+import { api, Badge, dateTime, Empty, ErrorNote, Field, km, METHOD_LABEL, Note, Spinner, useAction, useLive } from "@/frontend/components/ui";
+import { can } from "@/shared/permissions";
+import { brl } from "@/shared/pricing";
+import { WEIGHT_LABELS, type DispatchWeights } from "@/shared/dispatch";
 import { useRole } from "../shell";
 
 // ------------------------------------------------------------------ cadastros simples
@@ -187,9 +188,26 @@ function Users() {
   const { data, loading, reload } = useLive<{ rows: Row[] }>("/api/admin/users");
   const { error, busy, run } = useAction();
   const [q, setQ] = useState("");
+  // Liberação do bloqueio de 180 dias do CPF de motorista excluído (só administrador; motivo obrigatório).
+  const [cpf, setCpf] = useState("");
+  const [note, setNote] = useState("");
+  const [released, setReleased] = useState(false);
   const rows = useMemo(() => data?.rows.filter((u) => `${u.name} ${u.email} ${u.phone}`.toLowerCase().includes(q.toLowerCase())) ?? [], [data, q]);
   if (loading && !data) return <Spinner />;
   return <><PageTitle>Usuários</PageTitle>
+    {role === "admin" && (
+      <details className="card mb-4 p-4" data-testid="cpf-block-release">
+        <summary className="cursor-pointer font-semibold">Liberar CPF bloqueado de motorista excluído</summary>
+        <p className="mt-2 text-sm text-muted">Quem excluiu uma conta de motorista com histórico fica 180 dias sem poder ser motorista de novo com o mesmo CPF. O cadastro como passageiro nunca é bloqueado.</p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <Field label="CPF"><input className="input num" inputMode="numeric" maxLength={14} value={cpf} onChange={(e) => { setCpf(e.target.value); setReleased(false); }} /></Field>
+          <Field label="Motivo (obrigatório, fica na auditoria)"><input className="input" maxLength={500} value={note} onChange={(e) => { setNote(e.target.value); setReleased(false); }} /></Field>
+        </div>
+        <button type="button" className="btn btn-soft btn-sm mt-3" disabled={busy || cpf.replace(/\D/g, "").length !== 11 || note.trim().length < 5}
+          onClick={() => run(async () => { await api("/api/admin/cpf-block-release", { body: { cpf, note } }); setCpf(""); setNote(""); setReleased(true); })}>Liberar bloqueio</button>
+        {released && <p className="mt-2 text-sm" role="status">Bloqueio liberado.</p>}
+      </details>
+    )}
     <input className="input mb-4 max-w-sm" placeholder="Buscar por nome, e-mail ou telefone" aria-label="Buscar usuários" value={q} onChange={(e) => setQ(e.target.value)} />
     <ErrorNote>{error}</ErrorNote>
     {!rows.length ? <Empty icon="users" title="Nenhum usuário encontrado" /> : <DataTable rows={rows} columns={[
@@ -202,15 +220,49 @@ function Users() {
 }
 
 function Rides() {
-  const { data, loading } = useLive<{ rows: Row[] }>("/api/admin/rides");
+  const role = useRole();
+  const { data, loading, reload } = useLive<{ rows: Row[] }>("/api/admin/rides");
+  const { error, busy, run } = useAction();
+  // Resolver corrida presa: encerrar (cobra o estimado ou um valor) ou cancelar (sem cobrança), sempre com motivo.
+  const [target, setTarget] = useState<{ id: string; mode: "close" | "cancel"; totalCents: number } | null>(null);
+  const [reason, setReason] = useState("");
+  const [amount, setAmount] = useState("");
+  const canResolve = can(role, "rides", "write");
+  const open = (r: Row, mode: "close" | "cancel") => { setTarget({ id: r.id, mode, totalCents: r.totalCents }); setReason(""); setAmount(""); };
+  const send = () => run(async () => {
+    if (!target) return;
+    const cents = amount.trim() ? Math.round(Number(amount.replace(",", ".")) * 100) : undefined;
+    if (cents !== undefined && (!Number.isFinite(cents) || cents <= 0)) throw new Error("Informe um valor válido, por exemplo 25,90.");
+    await api(`/api/admin/rides/${target.id}/${target.mode}`, { body: { reason, ...(target.mode === "close" && cents ? { amountCents: cents } : {}) } });
+    setTarget(null); reload();
+  });
   if (loading && !data) return <Spinner />;
-  return <><PageTitle sub="Últimas 200 corridas, atualizadas em tempo real.">Viagens</PageTitle>
+  const resolvable = (r: Row) => ["scheduled", "searching", "accepted", "arrived", "in_progress"].includes(r.status);
+  return <><PageTitle sub="Últimas 200 corridas, atualizadas em tempo real. Corrida presa em viagem pode ser encerrada ou cancelada pela equipe.">Viagens</PageTitle>
+    <ErrorNote>{error}</ErrorNote>
+    {target && (
+      <div className="card mb-4 space-y-3 p-4" role="group" aria-label={target.mode === "close" ? "Encerrar corrida" : "Cancelar corrida"} data-testid="ride-resolve">
+        <p className="font-semibold">{target.mode === "close" ? "Encerrar corrida cobrando" : "Cancelar corrida sem cobrança"} · <span className="num">{target.id.slice(0, 8)}</span></p>
+        <Field label="Motivo (obrigatório, fica na auditoria)"><input className="input" maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} data-testid="ride-reason" /></Field>
+        {target.mode === "close" && <Field label={`Valor a cobrar (opcional, em reais; vazio cobra o estimado de ${brl(target.totalCents)})`}><input className="input num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} data-testid="ride-amount" /></Field>}
+        <div className="flex gap-2">
+          <button type="button" className="btn btn-primary btn-sm" disabled={busy || reason.trim().length < 5} onClick={send} data-testid="ride-confirm">{target.mode === "close" ? "Encerrar e cobrar" : "Cancelar corrida"}</button>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setTarget(null)}>Voltar</button>
+        </div>
+      </div>
+    )}
     {!data?.rows.length ? <Empty title="Nenhuma corrida registrada" /> : <DataTable rows={data.rows} columns={[
-      { key: "createdAt", label: "Pedido", render: (r) => dateTime(r.createdAt) }, { key: "statusLabel", label: "Situação", render: (r) => <Badge tone={r.status === "completed" ? "ok" : r.status === "cancelled" ? "danger" : "brand"}>{r.statusLabel}</Badge> },
+      { key: "createdAt", label: "Pedido", render: (r) => dateTime(r.createdAt) }, { key: "statusLabel", label: "Situação", render: (r) => <span className="flex flex-wrap gap-1"><Badge tone={r.status === "completed" ? "ok" : r.status === "cancelled" ? "danger" : "brand"}>{r.statusLabel}</Badge>{r.reviewReason && <Badge tone="warn">Para revisão</Badge>}</span> },
       { key: "route", label: "Trajeto", render: (r) => `${r.origin.label} → ${r.dest.label}` }, { key: "distanceM", label: "Distância", render: (r) => km(r.distanceM) },
       { key: "driver", label: "Motorista", render: (r) => r.driver?.name ?? "—" }, { key: "grossCents", label: "Bruto", kind: "money" }, { key: "commissionCents", label: "Comissão", kind: "money" },
       { key: "paymentMethod", label: "Pagamento", render: (r) => METHOD_LABEL[r.paymentMethod] },
-    ]} />}</>;
+      { key: "reviewReason", label: "Revisão", render: (r) => r.reviewReason ?? "—" },
+    ]} actions={canResolve ? (r) => !resolvable(r) ? null : (
+      <div className="flex gap-1">
+        {r.status === "in_progress" && <button type="button" className="btn btn-soft btn-sm" disabled={busy} onClick={() => open(r, "close")}>Encerrar</button>}
+        <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => open(r, "cancel")}>Cancelar</button>
+      </div>
+    ) : undefined} />}</>;
 }
 
 function Payments() {
@@ -257,6 +309,42 @@ function Tickets() {
               <input className="input" aria-label="Resposta" placeholder="Escreva a resposta" required value={answers[t.id] ?? ""} onChange={(e) => setAnswers((a) => ({ ...a, [t.id]: e.target.value }))} />
               <button className="btn btn-primary" disabled={busy}>Responder</button>
               <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => run(async () => { await api(`/api/admin/tickets/${t.id}`, { body: { status: "closed" } }); reload(); })}>Encerrar</button>
+            </form>
+          )}
+        </li>
+      ))}</ul>
+    )}</>;
+}
+
+const pointLink = (lat: unknown, lng: unknown, label: string) =>
+  typeof lat === "number" && typeof lng === "number"
+    ? <a className="font-semibold underline" target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${lat.toFixed(6)},${lng.toFixed(6)}`}>{label}</a>
+    : <span className="text-muted">{label}: sem posição</span>;
+
+/** Alertas do botão de emergência. Só registram e avisam: a análise e a nota são da equipe, e nada pune ninguém sozinho. */
+function Emergencies() {
+  const { data, loading, reload } = useLive<{ rows: Row[] }>("/api/admin/emergencies");
+  const { error, busy, run } = useAction();
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  if (loading && !data) return <Spinner />;
+  const rows = data?.rows ?? [];
+  const open = rows.filter((r) => !r.reviewedAt).length;
+  return <><PageTitle sub="Alertas do botão de emergência. A Orbi não é um plantão 24 horas: quem atende a emergência é o 190.">Emergências</PageTitle><ErrorNote>{error}</ErrorNote>
+    {open > 0 && <div className="mb-3" role="alert"><Note tone="danger"><strong>{open} ocorrência{open > 1 ? "s" : ""} sem análise.</strong></Note></div>}
+    {!rows.length ? <Empty icon="sos" title="Nenhum alerta de emergência" /> : (
+      <ul className="space-y-3" data-testid="emergency-list">{rows.map((e) => (
+        <li key={e.id} className="card p-4" data-testid="emergency-item" style={!e.reviewedAt ? { boxShadow: "0 0 0 2px var(--danger)" } : undefined}>
+          <div className="flex flex-wrap items-center gap-2"><Badge tone={e.reviewedAt ? "ok" : "danger"}>{e.reviewedAt ? "Analisada" : "Sem análise"}</Badge><Badge>{e.actor === "driver" ? "Motorista" : "Passageiro"}</Badge><span className="ml-auto text-xs text-muted">{e.userName} · {dateTime(e.createdAt)}</span></div>
+          <p className="mt-2 text-sm">Corrida <Link className="num font-semibold underline" href="/admin/viagens">{String(e.rideId).slice(0, 8)}</Link> · {e.originLabel} → {e.destLabel}</p>
+          <p className="mt-1 flex flex-wrap gap-x-4 text-sm">
+            {pointLink(e.actorLat, e.actorLng, "Posição de quem acionou")}
+            {pointLink(e.driverLat, e.driverLng, "Motorista")}
+            {pointLink(e.passengerLat ?? e.originLat, e.passengerLng ?? e.originLng, e.passengerLat != null ? "Passageiro" : "Ponto de partida")}
+          </p>
+          {e.reviewedAt ? <p className="mt-2 rounded-xl bg-surface-2 p-3 text-sm"><strong>Análise:</strong> {e.reviewNote}</p> : (
+            <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={(ev) => { ev.preventDefault(); run(async () => { await api(`/api/admin/emergencies/${e.id}`, { body: { note: notes[e.id] } }); setNotes((n) => ({ ...n, [e.id]: "" })); reload(); }); }}>
+              <input className="input" aria-label="Nota da análise" placeholder="Nota da análise (o que foi feito)" required minLength={3} value={notes[e.id] ?? ""} onChange={(ev) => setNotes((n) => ({ ...n, [e.id]: ev.target.value }))} />
+              <button className="btn btn-primary" disabled={busy}>Marcar como analisada</button>
             </form>
           )}
         </li>
@@ -415,7 +503,7 @@ function Staff() {
 
 const SECTIONS: Record<string, { res: Parameters<typeof can>[1]; view: () => React.ReactNode }> = {
   motoristas: { res: "drivers", view: Drivers }, veiculos: { res: "vehicles", view: Vehicles }, usuarios: { res: "users", view: Users }, viagens: { res: "rides", view: Rides },
-  chamados: { res: "tickets", view: Tickets }, pagamentos: { res: "payments", view: Payments }, relatorios: { res: "reports", view: Reports }, tarifas: { res: "tariffs", view: Tariffs },
+  emergencias: { res: "tickets", view: Emergencies }, chamados: { res: "tickets", view: Tickets }, pagamentos: { res: "payments", view: Payments }, relatorios: { res: "reports", view: Reports }, tarifas: { res: "tariffs", view: Tariffs },
   planos: { res: "plans", view: CrudPlans }, cupons: { res: "coupons", view: CrudCoupons }, campanhas: { res: "campaigns", view: CrudCampaigns }, parceiros: { res: "partners", view: CrudPartners },
   interessados: { res: "leads", view: Leads }, regioes: { res: "regions", view: CrudRegions }, modalidades: { res: "modalities", view: CrudModalities }, configuracoes: { res: "settings", view: Settings },
   equipe: { res: "staff", view: Staff }, atividades: { res: "audit", view: Audit },

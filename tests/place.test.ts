@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { searchPlaces, toPlace } from "@/server/geo";
+import { searchPlaces, toPlace } from "@/backend/geo";
 
 const feature = (props: Record<string, string>, coords: [number, number] = [-42.53, -19.47]) => ({ geometry: { coordinates: coords }, properties: props });
 

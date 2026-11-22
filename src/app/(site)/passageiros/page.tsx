@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { Icon } from "@/components/Icon";
-import { Dark, Features, PageHead, type Feature } from "@/components/site/Page";
-import { Reveal } from "@/components/site/Fx";
-import { PhoneMock } from "@/components/site/PhoneMock";
-import { StoryPhone } from "@/components/site/StoryPhone";
+import { Icon } from "@/frontend/components/Icon";
+import { Dark, Features, PageHead, type Feature } from "@/frontend/components/site/Page";
+import { Reveal } from "@/frontend/components/site/Fx";
+import { PhoneMock } from "@/frontend/components/site/PhoneMock";
+import { StoryPhone } from "@/frontend/components/site/StoryPhone";
 
 export const metadata = { title: "Passageiros" };
 
@@ -11,7 +11,7 @@ const ITEMS: Feature[] = [
   ["receipt", "Preço antes de pedir", "Você compara as categorias, o tempo de chegada e o valor, e só confirma quando quiser. Sem tela a mais e sem surpresa no fim da viagem."],
   ["shield", "Motorista identificado", "Foto, nome, carro, placa e avaliação na sua tela. Documentos validados pela nossa equipe."],
   ["share", "Viagem compartilhada", "Envie um link para acompanharem seu trajeto em tempo real, sem precisar de conta."],
-  ["sos", "Emergência a um toque", "Ligue para o 190 e abra um chamado prioritário direto da corrida."],
+  ["sos", "Emergência a um toque", "Um toque abre a ligação para o 190 e mostra na tela a placa do carro e onde você está. A Orbi recebe o alerta e analisa cada caso, mas não é um plantão 24 horas: em emergência, quem atende é o 190."],
   ["wallet", "Dinheiro hoje, Pix e cartão em breve", "O aplicativo mostra as formas de pagamento disponíveis antes de você pedir."],
   ["help", "Quem responde é gente", "Ajuda, reclamações e sugestões ficam registradas e são respondidas no aplicativo."],
 ];

@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 import { eq } from "drizzle-orm";
-import { getDb, schema as s } from "@/db";
+import { getDb, schema as s } from "@/database";
 
 /** Mapa do site para buscadores: páginas públicas e uma página por cidade ativa. */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

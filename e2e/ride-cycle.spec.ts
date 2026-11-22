@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { ADMIN, gpsContext, login, makeCnh, makeCpf, PNG, REQUIRED_DOCS, signUp, uniquePhone } from "./helpers";
+import { openTrip, ADMIN, gpsContext, login, makeCnh, PNG, REQUIRED_DOCS, signUp, uniquePhone } from "./helpers";
 
 test("corrida completa entre passageiro, motorista e administração", async ({ browser }) => {
   // O ciclo inteiro (cadastro, documentos, aprovação, corrida, ganhos) é longo: mais folga que o padrão.
@@ -7,12 +7,13 @@ test("corrida completa entre passageiro, motorista e administração", async ({ 
   const driverPhone = uniquePhone();
   const plate = `TST${(Date.now() % 10)}A${String(Date.now() % 100).padStart(2, "0")}`;
 
-  // Motorista: cadastro pela interface
+  // Motorista: cadastro pela interface (conta de passageiro, "Seja motorista" e o cadastro de motorista)
   const driverCtx = await gpsContext(browser);
   const driver = await driverCtx.newPage();
-  await signUp(driver, "motorista", driverPhone, "Rita Teste Motorista");
+  const driverCpf = await signUp(driver, "motorista", driverPhone, "Rita Teste Motorista");
 
-  await driver.getByLabel("CPF").fill(makeCpf());
+  // O CPF informado ao criar a conta já vem preenchido
+  await expect.poll(async () => (await driver.getByLabel("CPF").inputValue()).replace(/\D/g, "")).toBe(driverCpf);
   await driver.getByLabel("Data de nascimento").fill("1990-05-10");
   await driver.getByLabel("Número da CNH").fill(makeCnh());
   await driver.getByLabel("Primeira habilitação").fill("2012-03-01");
@@ -77,6 +78,7 @@ test("corrida completa entre passageiro, motorista e administração", async ({ 
   const pageErrors: string[] = [];
   passenger.on("pageerror", (e) => pageErrors.push(e.message));
   await signUp(passenger, "passageiro", uniquePhone(), "Caio Teste Passageiro");
+  await openTrip(passenger);
   await expect(passenger.getByRole("heading", { name: "Para onde vamos?" })).toBeVisible();
   await expect(passenger.getByRole("combobox", { name: "Partida" })).not.toHaveValue("", { timeout: 20000 });
 
@@ -153,11 +155,26 @@ test("corrida completa entre passageiro, motorista e administração", async ({ 
   await visitor.goto(`/v/${share}`);
   await expect(visitor.getByRole("heading", { name: "Motorista a caminho" })).toBeVisible();
 
-  // Andamento
+  // Andamento: o servidor confere a posição do motorista (partida ao chegar, destino ao encerrar)
+  const live = await passenger.evaluate(async () => (await (await fetch("/api/rides")).json()).active);
+  // maxRetries: o servidor fecha conexões ociosas e o Playwright só repete o ECONNRESET quando pedimos (não é espera maior).
+  const at = async (p: { lat: number; lng: number }) => expect((await driver.request.post("/api/driver/location", { data: { lat: p.lat, lng: p.lng }, maxRetries: 3 })).ok()).toBeTruthy();
+  await at(live.origin);
   await driver.getByRole("button", { name: "Cheguei ao passageiro" }).click();
   await expect(passenger.getByRole("heading", { name: "Motorista chegou" })).toBeVisible({ timeout: 15000 });
   await driver.getByRole("button", { name: "Iniciar viagem" }).click();
   await expect(passenger.getByRole("heading", { name: "Em viagem" })).toBeVisible({ timeout: 15000 });
+  // O app do motorista reenvia a posição do GPS do navegador (a cada ~25 s, mesmo parado). Se o GPS do contexto
+  // ficasse na partida, esse reenvio podia chegar depois do POST do teste e fazer o servidor ver o motorista longe
+  // do destino (formulário "encerrar longe"). Por isso o GPS do contexto vai para o destino e esperamos o app enviá-lo.
+  const destSent = driver.waitForResponse(async (r) => {
+    if (!r.url().includes("/api/driver/location") || r.request().method() !== "POST") return false;
+    const sent = r.request().postDataJSON() as { lat: number; lng: number };
+    return Math.abs(sent.lat - live.dest.lat) < 1e-6 && Math.abs(sent.lng - live.dest.lng) < 1e-6 && r.ok();
+  });
+  await driverCtx.setGeolocation({ latitude: live.dest.lat, longitude: live.dest.lng });
+  await destSent;
+  await at(live.dest);
   await driver.getByRole("button", { name: "Encerrar viagem" }).click();
 
   // Avaliação nos dois sentidos
@@ -216,9 +233,11 @@ test("trajeto digitado no site chega à tela de preços depois de criar a conta"
   await expect(page.getByRole("radio", { name: /Essencial/ })).toBeVisible({ timeout: 30000 });
   await expect(page.getByTestId("trip-summary")).toContainText("Coronel Fabriciano");
 
-  // Site e app ligados: o logo volta à tela inicial, que reconhece a conta e leva direto aos preços
+  // O símbolo do app leva à tela inicial do próprio app, nunca ao site
   await page.getByRole("link", { name: "Orbi, tela inicial" }).first().click();
-  await page.waitForURL(/\/$/);
+  await expect(page).toHaveURL(/\/passageiro$/);
+  // Site e app ligados: o site reconhece a conta e leva direto aos preços
+  await page.goto("/");
   await expect(page.getByRole("link", { name: "Minha conta" }).first()).toBeVisible();
   await page.getByRole("combobox", { name: "Local de chegada" }).fill("Coronel Fabriciano");
   await page.getByRole("listbox", { name: /chegada/ }).getByRole("option").first().click();

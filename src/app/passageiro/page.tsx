@@ -1,18 +1,22 @@
 "use client";
-import { MapView } from "@/components/LazyMap";
+import { MapView } from "@/frontend/components/LazyMap";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Icon } from "@/components/Icon";
-import { RideChat, type Message } from "@/components/app/RideChat";
-import { api, ErrorNote, km, METHOD_LABEL, mins, Note, Spinner, Stars, useAction, useLive } from "@/components/ui";
-import type { MapEndLabels, MapPoint, MapPreview } from "@/components/MapView";
-import { PlaceSearch, type Place } from "@/components/PlaceSearch";
-import { PlacePreview } from "@/components/PlacePreview";
-import { CarArt, MotoArt } from "@/components/VehicleArt";
-import { SaveAs, Shortcuts, useSavedPlaces } from "@/components/app/SavedPlaces";
-import { brl } from "@/domain/pricing";
-import { KIND_LABEL } from "@/domain/place";
-import { METHOD_INFO, type PaymentMethod } from "@/domain/payment-methods";
-import { PixPay } from "@/components/app/PixPay";
+import { Icon } from "@/frontend/components/Icon";
+import { EmergencySheet } from "@/frontend/components/app/EmergencySheet";
+import { RideChat, type Message } from "@/frontend/components/app/RideChat";
+import { api, ErrorNote, km, METHOD_LABEL, mins, Note, Spinner, Stars, useAction, useLive } from "@/frontend/components/ui";
+import type { MapEndLabels, MapPoint, MapPreview } from "@/frontend/components/MapView";
+import { PlaceSearch, type Place } from "@/frontend/components/PlaceSearch";
+import { PlacePreview } from "@/frontend/components/PlacePreview";
+import { CategoryArt } from "@/frontend/components/VehicleArt";
+import { SaveAs, Shortcuts, useSavedPlaces } from "@/frontend/components/app/SavedPlaces";
+import { brl } from "@/shared/pricing";
+import { motoOfferedAt } from "@/shared/moto-soon";
+import { KIND_LABEL } from "@/shared/place";
+import { METHOD_INFO, type PaymentMethod } from "@/shared/payment-methods";
+import { PixPay } from "@/frontend/components/app/PixPay";
+import Link from "next/link";
+import { PassengerStart, type StartPick } from "@/frontend/components/app/PassengerStart";
 
 /** Ordem em que as formas aparecem: primeiro as que funcionam hoje. */
 const METHOD_ORDER: PaymentMethod[] = ["pix_driver", "cash", "card_machine", "pix", "card"];
@@ -57,11 +61,92 @@ type Stop = { id: number; place: Place | null };
 
 /** Data para o campo datetime-local, no fuso do aparelho. */
 const toLocalInput = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+/** Horário sugerido ao escolher "Agendar": daqui a 40 min, no próximo múltiplo de 5. Com folga sobre o mínimo de 30, quem demora a confirmar não cai no erro. */
+const suggestedAt = () => { const t = Date.now() + 40 * 60_000; return toLocalInput(new Date(Math.ceil(t / 300_000) * 300_000)); };
 export const whenLabel = (iso: string) => {
   const s = new Date(iso).toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
 const MAX_STOPS = 2;
+
+/** Campo do destino final: os atalhos de "Serviços" põem o foco nele. */
+const DEST_INPUT_ID = "pedido-destino-final";
+/** Atalho escolhido antes de digitar o destino; vale quando os preços chegam. */
+type Intent = "schedule" | "other" | "moto";
+const INTENT_HINT: Record<Intent, string> = {
+  schedule: "Escolha o destino final. Nos preços, o pedido já vem em Agendar para você escolher o dia e a hora.",
+  other: "Escolha o destino final. Nos preços, informe o nome e o celular de quem vai viajar.",
+  moto: "Escolha o destino final. Nos preços, a Moto já vem selecionada.",
+};
+
+/**
+ * Atalhos para o que o app já faz, antes de digitar o destino. Uma fileira só, que rola de lado no celular.
+ * "Moto" só aparece quando alguma cidade tem a categoria ligada no painel.
+ */
+function Services({ hasMoto, onPick }: { hasMoto: boolean; onPick: (i: Intent | null) => void }) {
+  const items: { id: Intent | null; label: string; icon: string }[] = [
+    { id: null, label: "Viagem", icon: "car" },
+    { id: "schedule", label: "Agendar", icon: "calendar" },
+    { id: "other", label: "Para outra pessoa", icon: "users" },
+    ...(hasMoto ? [{ id: "moto" as const, label: "Moto", icon: "moto" }] : []),
+  ];
+  return (
+    // A rolagem lateral recorta o que sai da fileira: a folga de 6 px em volta (compensada pela margem negativa)
+    // deixa inteiro o contorno de foco global (2 px + 3 px de afastamento).
+    <div role="group" aria-label="Serviços" data-testid="services" className="-mx-1.5 -mt-1.5 mb-2 flex gap-2 overflow-x-auto p-1.5 [scrollbar-width:none]">
+      {items.map((it) => (
+        <button key={it.label} type="button" onClick={() => onPick(it.id)}
+          className="flex min-h-12 shrink-0 items-center gap-2 rounded-[22px] bg-tint py-1.5 pr-4 pl-1.5 text-sm font-semibold text-ink transition-colors hover:bg-tint-2">
+          <span className="grid size-9 place-items-center rounded-full bg-surface text-brand"><Icon name={it.icon} size={18} /></span>{it.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Pedido de localização em uma faixa curta, acima do cartão do pedido (antes ocupava a gaveta inteira). */
+function LocationAsk({ onUse, onType }: { onUse: () => void; onType: () => void }) {
+  return (
+    <div className="anim-rise flex items-center gap-3 rounded-[22px] bg-tint p-2.5 pl-3 text-ink" data-testid="location-ask">
+      <span className="grid size-9 shrink-0 place-items-center rounded-full bg-brand-solid text-white"><Icon name="locate" size={18} /></span>
+      <div className="min-w-0 flex-1">
+        <h2 className="truncate text-sm font-semibold leading-tight">Use sua localização</h2>
+        <p className="truncate text-xs text-muted">Para preencher a partida</p>
+      </div>
+      <button type="button" className="shrink-0 rounded-full px-2.5 py-2 text-xs font-semibold text-brand hover:bg-surface" onClick={onType} aria-label="Digitar endereço">Digitar</button>
+      <button type="button" className="shrink-0 rounded-full bg-brand-solid px-3.5 py-2 text-xs font-semibold text-white" onClick={onUse} aria-label="Usar minha localização">Permitir</button>
+    </div>
+  );
+}
+
+/** Cartão curto de segurança: leva à Ajuda, onde estão compartilhar viagem, emergência e a verificação dos motoristas. */
+function SafetyCard() {
+  return (
+    <Link href="/passageiro/ajuda" data-testid="safety-card" className="flex items-center gap-3 rounded-[22px] border border-line px-3 py-2.5 transition-colors hover:bg-surface-2">
+      <span className="grid size-9 shrink-0 place-items-center rounded-full bg-surface-2 text-brand"><Icon name="shield" size={18} /></span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold">Viaje com segurança</span>
+        <span className="block truncate text-xs text-muted">Compartilhe a viagem · Emergência a um toque · Motorista verificado</span>
+      </span>
+      <Icon name="arrow" size={16} className="text-muted" />
+    </Link>
+  );
+}
+
+/**
+ * Há categoria Moto ligada onde o passageiro está? Vem das tarifas públicas, que só trazem o que está ativo.
+ * Com a partida ou o GPS conhecidos, só conta a cidade que cobre esse ponto; sem ponto (tela de início), qualquer cidade.
+ */
+function useHasMoto(point?: { lat: number; lng: number } | null) {
+  const [cities, setCities] = useState<{ lat: number; lng: number; radiusKm: number; categories: { slug: string }[] }[]>([]);
+  useEffect(() => {
+    let live = true;
+    api<{ cities: { lat: number; lng: number; radiusKm: number; categories: { slug: string }[] }[] }>("/api/public/tariffs")
+      .then((r) => { if (live) setCities(r.cities); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  return motoOfferedAt(cities, point);
+}
 
 type MapState = {
   points: MapPoint[]; route: [number, number][] | null; onPick?: (p: { lat: number; lng: number }) => void; picking?: boolean;
@@ -85,11 +170,11 @@ const maskPhone = (v: string) => {
   return d.length <= split ? `(${d.slice(0, 2)}) ${d.slice(2)}` : `(${d.slice(0, 2)}) ${d.slice(2, split)}-${d.slice(split)}`;
 };
 
-function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false }: { onCreated: () => void; setMapState: (s: MapState) => void; recent: Place[]; firstName?: string; wide3?: boolean }) {
+function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false, start, onBack }: { onCreated: () => void; setMapState: (s: MapState) => void; recent: Place[]; firstName?: string; wide3?: boolean; start?: StartPick; onBack?: () => void }) {
   const [origin, setOrigin] = useState<Place | null>(null);
   // Sugestão em destaque na busca, mostrada no mapa antes da escolha.
   const [preview, setPreview] = useState<Place | null>(null);
-  const [dest, setDest] = useState<Place | null>(null);
+  const [dest, setDest] = useState<Place | null>(start?.dest ?? null);
   const [picking, setPicking] = useState<Pick | null>(null);
   // Paradas entre a partida e o destino final (até duas), na ordem do trajeto.
   const [stops, setStops] = useState<Stop[]>([]);
@@ -111,6 +196,10 @@ function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false
   const [forOther, setForOther] = useState(false);
   const [riderName, setRiderName] = useState("");
   const [riderPhone, setRiderPhone] = useState("");
+  // Atalho de "Serviços" escolhido antes do destino, e a dica que aparece até os preços chegarem.
+  const [intent, setIntent] = useState<Intent | null>(start?.intent ?? null);
+  const [hint, setHint] = useState<string | null>(start?.intent ? INTENT_HINT[start.intent] : null);
+  const hasMoto = useHasMoto(origin ?? gps);
   const saved = useSavedPlaces();
   const filledStops = stops.map((s) => s.place).filter((p): p is Place => !!p);
   const stopsKey = filledStops.map((p) => `${p.lat},${p.lng}`).join(";");
@@ -164,6 +253,24 @@ function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false
     );
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (quote) setEditing(false); }, [quote]);
+  // Com os preços na tela, o atalho escolhido vira a opção marcada: Agendar, outra pessoa ou a Moto.
+  useEffect(() => {
+    if (!quote || !intent) return;
+    setIntent(null);
+    setHint(null);
+    if (intent === "schedule") { setWhen("later"); setAt((a) => a || suggestedAt()); }
+    else if (intent === "other") setForOther(true);
+    else {
+      const moto = quote.options.find((o) => o.slug === "moto");
+      if (moto) setCategory(moto.categoryId);
+      else setHint("A Moto não atende este trajeto agora. Escolha outra categoria.");
+    }
+  }, [quote]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pickService = (i: Intent | null) => {
+    setIntent(i);
+    setHint(i ? INTENT_HINT[i] : null);
+    document.getElementById(DEST_INPUT_ID)?.focus();
+  };
   const declineLocation = () => {
     setAskLocation(false);
     try { localStorage.setItem("prumo-location-declined", "1"); } catch { /* armazenamento bloqueado */ }
@@ -221,18 +328,6 @@ function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false
   }, [points, quote, picking, preview, editing, origin, gps, category]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selected = quote?.options.find((o) => o.categoryId === category);
-  if (askLocation) {
-    return (
-      <div className="anim-rise space-y-3">
-        <span className="grid size-12 place-items-center rounded-full bg-surface-2 text-brand"><Icon name="locate" /></span>
-        <h1 className="display text-2xl md:text-3xl">Use sua localização</h1>
-        <p className="text-muted">Ela preenche o ponto de partida do seu pedido. Se preferir, digite o endereço.</p>
-        <button type="button" className="btn btn-primary btn-lg w-full" onClick={() => { setAskLocation(false); locate(); }}>Usar minha localização</button>
-        <button type="button" className="btn btn-ghost w-full" onClick={declineLocation}>Digitar endereço</button>
-      </div>
-    );
-  }
-
   if (booked) {
     return (
       <div className="anim-rise space-y-3" data-testid="booked">
@@ -241,7 +336,7 @@ function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false
         <p className="font-semibold">{whenLabel(booked)}</p>
         <p className="text-sm text-muted">{[origin?.label, ...filledStops.map((p) => p.label), dest?.label].join(" → ")}</p>
         <Note tone="ok">A busca por motorista começa alguns minutos antes do horário, e você recebe um aviso aqui. O preço mostrado fica garantido.</Note>
-        <a href="/passageiro/viagens" className="btn btn-soft w-full">Ver agendadas</a>
+        <Link href="/passageiro/viagens" className="btn btn-soft w-full">Ver agendadas</Link>
         <button type="button" className="btn btn-primary w-full" onClick={() => { setBooked(null); setDest(null); setStops([]); setWhen("now"); setAt(""); setQuote(null); }}>Fazer outro pedido</button>
       </div>
     );
@@ -262,7 +357,7 @@ function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false
       <legend className="mb-1.5 text-sm font-semibold">Quando</legend>
       <div className="grid grid-cols-2 gap-1 rounded-full bg-surface-2 p-1" role="radiogroup" aria-label="Quando">
         {([["now", "Agora", "bolt"], ["later", "Agendar", "calendar"]] as const).map(([v, label, icon]) => (
-          <button key={v} type="button" role="radio" aria-checked={when === v} onClick={() => { setWhen(v); if (v === "later" && !at) setAt(minAt); }}
+          <button key={v} type="button" role="radio" aria-checked={when === v} onClick={() => { setWhen(v); if (v === "later" && !at) setAt(suggestedAt()); }}
             className={`flex min-h-10 items-center justify-center gap-2 rounded-full text-sm font-semibold ${when === v ? "bg-surface shadow-[0_1px_4px_rgb(0_0_0/.12)]" : "text-muted"}`}><Icon name={icon} size={16} />{label}</button>
         ))}
       </div>
@@ -330,21 +425,24 @@ function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false
             {!quote ? (
               <div className="space-y-4">
                 <p className="text-muted">{busy ? "Calculando a rota e os preços…" : dest ? "Calculando…" : "Digite o destino final ao lado ou escolha um atalho: as opções e os preços aparecem aqui."}</p>
+                {!dest && <Services hasMoto={hasMoto} onPick={pickService} />}
                 {!dest && <Shortcuts places={saved.places} recent={recent} onPick={setDest} />}
+                {!dest && <SafetyCard />}
                 {busy && <div className="space-y-3">{[0, 1, 2].map((i) => <div key={i} className="map-loading h-24 rounded-2xl" />)}</div>}
               </div>
             ) : (
               <>
                 <p className="num text-sm text-muted">{km(quote.route.distanceM)} · cerca de {mins(quote.route.durationS)} de viagem · {quote.region.name}</p>
                 {quote.route.source === "estimate" && <Note tone="warn">Serviço de rotas indisponível: distância e preço estimados em linha reta.</Note>}
+                {hint && <Note tone="warn">{hint}</Note>}
                 <div role="radiogroup" aria-label="Categoria" className="space-y-2">
                   {quote.options.map((o) => {
                     const on = category === o.categoryId;
                     return (
-                      <button key={o.categoryId} type="button" role="radio" aria-checked={on} onClick={() => setCategory(o.categoryId)}
+                      <button key={o.categoryId} type="button" role="radio" aria-checked={on} onClick={() => { setCategory(o.categoryId); setHint(null); }}
                         className={`group flex w-full items-center gap-5 rounded-[22px] px-5 py-4 text-left transition-[box-shadow,background-color,transform] duration-300 ${on ? "bg-surface shadow-[0_0_0_2.5px_var(--primary)_inset,0_18px_40px_-26px_rgb(0_0_0/.5)]" : "hover:bg-surface hover:shadow-[0_0_0_1px_var(--line)_inset]"}`}>
                         <span aria-hidden="true" className={`relative grid h-16 w-28 shrink-0 place-items-center transition-transform duration-500 ${on ? "translate-x-1.5" : "group-hover:translate-x-1"}`}>
-                          {o.slug === "moto" ? <MotoArt className="w-20" /> : <CarArt className={o.seats > 4 ? "w-28" : o.slug === "conforto" ? "w-[6.5rem]" : "w-24"} />}
+                          <CategoryArt slug={o.slug} seats={o.seats} className={"w-28"} />
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="flex flex-wrap items-center gap-2"><span className="display text-2xl">{o.name}</span><span className="inline-flex items-center gap-0.5 text-sm text-muted"><Icon name="user" size={14} />{o.seats}</span></span>
@@ -360,7 +458,7 @@ function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false
                     );
                   })}
                 </div>
-                {selected && <p className="num text-xs text-muted">Corrida {brl(selected.grossCents)} + taxa de serviço {brl(selected.serviceFeeCents)}{selected.discountCents > 0 && ` − cupom ${brl(selected.discountCents)}`}</p>}
+                {selected && <p className="num text-xs text-muted">Corrida {brl(selected.grossCents)}{selected.serviceFeeCents > 0 && ` + taxa de serviço ${brl(selected.serviceFeeCents)}`}{selected.discountCents > 0 && ` − cupom ${brl(selected.discountCents)}`}</p>}
                 {couponBlock}
               </>
             )}
@@ -389,10 +487,12 @@ function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
       <div>
-        {firstName && <p className="text-sm font-semibold text-brand">{greeting()}, {firstName}</p>}
-        <h1 className="display text-2xl md:text-4xl">Para onde vamos?</h1>
+        {/* Celular: volta para a tela de início (busca, atalhos e cartões). */}
+        {onBack && !quote && <button type="button" onClick={onBack} aria-label="Voltar para o início" className="-ml-2 mb-1 grid size-10 place-items-center rounded-full hover:bg-surface-2"><Icon name="back" size={22} /></button>}
+        {firstName && <p className="text-xs font-semibold text-brand">{greeting()}, {firstName}</p>}
+        <h1 className="display text-[1.7rem] leading-none md:text-[2.75rem]">Para onde vamos?</h1>
       </div>
       {showFields ? fieldsBlock(false) : (
         <div className="space-y-2" data-testid="trip-summary">
@@ -409,9 +509,12 @@ function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false
 
   function fieldsBlock(inWide: boolean) {
     return (
-        <div className="space-y-3">
-          {/* A partida vem primeiro; o destino final, depois. O fio de prumo liga os dois pontos. */}
-          <div className="relative space-y-2.5">
+        <div className="space-y-2.5">
+          {askLocation && <LocationAsk onUse={() => { setAskLocation(false); locate(); }} onType={declineLocation} />}
+          {/* Cartão azul: aqui a pessoa escolhe de onde sai e para onde vai. Campos brancos sobre o Azul Elétrico. */}
+          <div className="trip-card rounded-[26px] bg-brand-solid p-2.5 pb-1.5" data-testid="trip-card">
+          {/* A partida vem primeiro; o destino final, depois. O fio liga os dois pontos. */}
+          <div className="relative space-y-2">
             <span aria-hidden="true" className="pointer-events-none absolute top-7 bottom-7 left-[21px] z-10 w-[1.5px] bg-primary" />
             <div className="relative focus-within:z-30">
               <span aria-hidden="true" className="pointer-events-none absolute top-[19px] left-4 z-20 block size-3 rounded-full border-[3px] border-primary bg-surface" />
@@ -433,18 +536,22 @@ function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false
             ))}
             <div className="relative focus-within:z-30">
               <span aria-hidden="true" className="pointer-events-none absolute top-[13px] left-[12px] z-20 text-primary"><Icon name="prumo" size={20} weight="fill" /></span>
-              <PlaceSearch label="Destino final" value={dest} onPick={setDest} onClear={() => setDest(null)} near={origin ?? gps} onPreview={setPreview} inputClassName="!pl-11 !pr-14" />
+              <PlaceSearch label="Destino final" inputId={DEST_INPUT_ID} value={dest} onPick={setDest} onClear={() => setDest(null)} near={origin ?? gps} onPreview={setPreview} inputClassName="!pl-11 !pr-14" />
               <div className="absolute top-1 right-1 z-20 flex">
                 <button type="button" className={`grid size-11 place-items-center rounded-full ${picking === "dest" ? "bg-primary text-on-primary" : "hover:bg-surface"}`} onClick={() => setPicking(picking === "dest" ? null : "dest")} aria-pressed={picking === "dest"} aria-label="Marcar destino final no mapa"><Icon name="prumo" size={20} /></button>
               </div>
             </div>
           </div>
           {stops.length < MAX_STOPS && (
-            <button type="button" className="flex min-h-10 items-center gap-2 text-sm font-semibold text-brand" onClick={addStop}><Icon name="plus" size={18} />Adicionar parada</button>
+            <button type="button" className="flex min-h-10 items-center gap-2 px-2 text-sm font-semibold text-white" onClick={addStop}><Icon name="plus" size={18} />Adicionar parada</button>
           )}
+          </div>
           {picking && <Note tone="ok">Toque no mapa para marcar {pickName(picking)}.</Note>}
           {gpsNote && <p className="text-xs text-muted">{gpsNote}</p>}
+          {hint && !quote && <Note tone="ok">{hint}</Note>}
+          {!inWide && !dest && !picking && <Services hasMoto={hasMoto} onPick={pickService} />}
           {!inWide && !dest && !picking && <Shortcuts places={saved.places} recent={recent} onPick={setDest} />}
+          {!inWide && !dest && !picking && !askLocation && <SafetyCard />}
           {inWide ? (
             (origin || dest) && (
               <div className="space-y-2" data-testid="trip-summary">
@@ -455,9 +562,9 @@ function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false
             )
           ) : (
             <>
-              {origin && <PlacePreview place={origin} role={originIsGps ? "Partida · você está aqui" : "Partida"} />}
-              {stops.map((s, i) => s.place && <PlacePreview key={s.id} place={s.place} role={`Parada ${i + 1}`} />)}
-              {dest && <div className="space-y-2"><PlacePreview place={dest} role="Destino final" /><SaveAs place={dest} places={saved.places} onSaved={saved.reload} /></div>}
+              {origin && dest && <PlacePreview compact place={origin} role={originIsGps ? "Partida · você está aqui" : "Partida"} />}
+              {stops.map((s, i) => s.place && <PlacePreview compact key={s.id} place={s.place} role={`Parada ${i + 1}`} />)}
+              {dest && <div className="space-y-2"><PlacePreview compact place={dest} role="Destino final" /><SaveAs place={dest} places={saved.places} onSaved={saved.reload} /></div>}
               {editing && <button type="button" className="btn btn-soft w-full" onClick={() => { setEditing(false); setPicking(null); }}>Ver preços</button>}
             </>
           )}
@@ -468,15 +575,17 @@ function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false
   function narrowQuote() {
     if (!quote || editing) return null;
     return (
+      <>
         <div className="anim-rise space-y-3">
           <p className="num text-sm text-muted">{km(quote.route.distanceM)} · cerca de {mins(quote.route.durationS)} de viagem · {quote.region.name}</p>
           {quote.route.source === "estimate" && <Note tone="warn">Serviço de rotas indisponível: distância e preço estimados em linha reta.</Note>}
+          {hint && <Note tone="warn">{hint}</Note>}
           <div role="radiogroup" aria-label="Categoria" className="space-y-2">
             {quote.options.map((o) => (
-              <button key={o.categoryId} type="button" role="radio" aria-checked={category === o.categoryId} onClick={() => setCategory(o.categoryId)}
+              <button key={o.categoryId} type="button" role="radio" aria-checked={category === o.categoryId} onClick={() => { setCategory(o.categoryId); setHint(null); }}
                 className={`group flex w-full items-center gap-3 rounded-2xl p-3 text-left transition-[box-shadow,background-color] ${category === o.categoryId ? "bg-[color-mix(in_srgb,var(--primary)_8%,transparent)] shadow-[0_0_0_2px_var(--primary)_inset]" : "shadow-[0_0_0_1px_var(--line)_inset] hover:bg-surface-2"}`}>
                 <span aria-hidden="true" className={`relative grid h-12 w-[4.5rem] shrink-0 place-items-center transition-transform duration-300 ${category === o.categoryId ? "translate-x-1" : "group-hover:translate-x-0.5"}`}>
-                  {o.slug === "moto" ? <MotoArt className="w-[3.2rem]" /> : <CarArt className={o.seats > 4 ? "w-[4.5rem]" : o.slug === "conforto" ? "w-[4.1rem]" : "w-[3.8rem]"} />}
+                  <CategoryArt slug={o.slug} seats={o.seats} className={"w-[4.5rem]"} />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5 font-semibold">{o.name}<span className="inline-flex items-center gap-0.5 text-xs font-medium text-muted"><Icon name="user" size={12} />{o.seats}</span></span>
@@ -487,7 +596,7 @@ function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false
               </button>
             ))}
           </div>
-          {selected && <p className="num text-xs text-muted">Corrida {brl(selected.grossCents)} + taxa de serviço {brl(selected.serviceFeeCents)}{selected.discountCents > 0 && ` − cupom ${brl(selected.discountCents)}`}</p>}
+          {selected && <p className="num text-xs text-muted">Corrida {brl(selected.grossCents)}{selected.serviceFeeCents > 0 && ` + taxa de serviço ${brl(selected.serviceFeeCents)}`}{selected.discountCents > 0 && ` − cupom ${brl(selected.discountCents)}`}</p>}
 
           <fieldset>
             <legend className="mb-1.5 text-sm font-semibold">Pagamento</legend>
@@ -514,12 +623,14 @@ function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false
           {riderBlock}
           {couponBlock}
           <ErrorNote>{error}</ErrorNote>
-
-          {/* Fixo no fim da folha: pedir nunca depende de rolar a lista. */}
-          <div className="sticky bottom-0 -mx-4 bg-surface px-4 py-3 shadow-[0_-12px_16px_-12px_rgb(0_0_0/.12)] md:static md:mx-0 md:bg-transparent md:px-0 md:shadow-none">
-            <button type="button" className="btn btn-primary btn-lg w-full" disabled={requestDisabled} onClick={submitRide}>{requestLabel}</button>
-          </div>
         </div>
+        {/* Fixo no fim da folha: pedir nunca depende de rolar a lista. Fica FORA do bloco acima, como filho direto da raiz do painel:
+            um sticky não sai da caixa do pai, então, dentro do bloco, uma partida com endereço longo (que empurra o bloco para baixo)
+            deixava o botão parcialmente escondido atrás da borda da folha. Aqui o pai começa no topo da folha e o botão sempre gruda no fim. */}
+        <div className="sticky bottom-0 -mx-4 bg-surface px-4 py-3 shadow-[0_-12px_16px_-12px_rgb(0_0_0/.12)] md:static md:mx-0 md:bg-transparent md:px-0 md:shadow-none">
+          <button type="button" className="btn btn-primary btn-lg w-full" disabled={requestDisabled} onClick={submitRide}>{requestLabel}</button>
+        </div>
+      </>
     );
   }
 }
@@ -535,7 +646,7 @@ function GpsLine({ driver }: { driver: NonNullable<Ride["driver"]> }) {
   const stale = age !== null && age > 60;
   return (
     <p className={`flex items-center gap-2 text-xs ${stale ? "text-warn" : "text-muted"}`} data-testid="gps-line">
-      <span className="relative grid size-2 place-items-center"><span className={`absolute size-2 rounded-full ${stale ? "bg-[var(--warn)]" : "pulse-ring bg-[#5BD49B]"}`} /><span className={`size-2 rounded-full ${stale ? "bg-[var(--warn)]" : "bg-[#5BD49B]"}`} /></span>
+      <span className="relative grid size-2 place-items-center"><span className={`absolute size-2 rounded-full ${stale ? "bg-[var(--warn)]" : "pulse-ring bg-ok"}`} /><span className={`size-2 rounded-full ${stale ? "bg-[var(--warn)]" : "bg-ok"}`} /></span>
       <Icon name="phone" size={14} />
       {stale ? `Sem sinal do celular do motorista há ${Math.round(age! / 60)} min` : `GPS do celular do motorista · há ${age} s${driver.accuracyM ? ` · precisão ±${Math.round(driver.accuracyM)} m` : ""}`}
     </p>
@@ -545,7 +656,7 @@ function GpsLine({ driver }: { driver: NonNullable<Ride["driver"]> }) {
 function ActiveRide({ ride, reload }: { ride: Ride; reload: () => void }) {
   const { busy, error, run } = useAction();
   const [copied, setCopied] = useState(false);
-  const [alerted, setAlerted] = useState(false);
+  const [sos, setSos] = useState(false);
   const share = async () => {
     const url = `${location.origin}/v/${ride.shareToken}`;
     const text = `Acompanhe minha viagem na Orbi: ${url}`;
@@ -556,13 +667,13 @@ function ActiveRide({ ride, reload }: { ride: Ride; reload: () => void }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <h1 className="display text-2xl md:text-3xl">{ride.statusLabel}</h1>
-        {ride.status === "searching" && <div className="anim-swing text-brand"><svg width="14" height="34" viewBox="0 0 14 34" aria-hidden="true"><path d="M7 0v16" stroke="currentColor" /><path d="M7 34c-3-4-6-6-6-10a6 6 0 0 1 12 0c0 4-3 6-6 10Z" fill="currentColor" /></svg></div>}
+        <h1 className="display text-[1.9rem] leading-none md:text-4xl">{ride.statusLabel}</h1>
+        {ride.status === "searching" && <div aria-hidden="true" className="seek-orbit shrink-0"><i /><b /></div>}
       </div>
       {ride.status === "searching" && <p className="text-sm text-muted">Estamos oferecendo sua corrida aos motoristas disponíveis. Nada é cobrado se ninguém aceitar.</p>}
 
       {ride.driver && ride.vehicle && (
-        <div className="flex items-center gap-3 rounded-2xl bg-surface-2 p-3">
+        <div className="flex items-center gap-3 rounded-[22px] border border-line bg-surface p-3.5">
           {ride.driver.hasPhoto
             ? <img src={`/api/rides/${ride.id}/driver-photo`} alt={`Foto de ${ride.driver.name}`} className="size-14 rounded-full object-cover" /> /* eslint-disable-line @next/next/no-img-element */
             : <span className="grid size-14 place-items-center rounded-full bg-primary text-on-primary display text-xl">{ride.driver.name[0]}</span>}
@@ -570,7 +681,7 @@ function ActiveRide({ ride, reload }: { ride: Ride; reload: () => void }) {
             <p className="font-semibold">{ride.driver.name}{ride.driver.rating ? <span className="num text-sm font-normal"> · ★ {ride.driver.rating.toFixed(1).replace(".", ",")}</span> : <span className="text-sm font-normal text-muted"> · novo</span>}</p>
             <p className="truncate text-sm text-muted">{ride.vehicle.make} {ride.vehicle.model} · {ride.vehicle.color}</p>
           </div>
-          <span className="num rounded-lg bg-surface px-2.5 py-1.5 font-bold tracking-wider shadow-[0_0_0_1px_var(--line)]" aria-label={`Placa ${ride.vehicle.plate}`}>{ride.vehicle.plate}</span>
+          <span className="shrink-0 overflow-hidden rounded-lg border-2 border-night bg-white text-center leading-none text-night" aria-label={`Placa ${ride.vehicle.plate}`}><span aria-hidden="true" className="block bg-brand-solid px-1.5 py-[3px] text-[8px] font-bold tracking-[.18em] text-white">BRASIL</span><span className="num block px-2 py-1 text-[15px] font-bold tracking-wider">{ride.vehicle.plate}</span></span>
         </div>
       )}
 
@@ -590,10 +701,12 @@ function ActiveRide({ ride, reload }: { ride: Ride; reload: () => void }) {
       <div className="grid grid-cols-2 gap-2">
         <button type="button" className="btn btn-soft" onClick={share}><Icon name="share" size={18} />{copied ? "Link copiado" : "Compartilhar"}</button>
         {ride.status !== "searching" && (
-          <a href="tel:190" className="btn btn-danger" onClick={() => { if (!alerted) { setAlerted(true); api(`/api/rides/${ride.id}/emergency`, { body: {} }); } }}><Icon name="sos" size={18} /> Emergência</a>
+          <button type="button" className="btn btn-danger" onClick={() => setSos(true)} data-testid="sos-open"><Icon name="sos" size={18} /> Emergência</button>
         )}
       </div>
-      {alerted && <Note tone="warn">Chamado de emergência aberto para a nossa equipe. Em perigo, fale com o 190.</Note>}
+      {sos && <EmergencySheet rideId={ride.id} as="passenger" vehicle={ride.vehicle} shareToken={ride.shareToken}
+        knownPoint={ride.driver?.lat != null && ride.driver?.lng != null ? { lat: ride.driver.lat, lng: ride.driver.lng } : null}
+        fallbackPlace={ride.status === "in_progress" ? ride.dest.label : ride.origin.label} onClose={() => setSos(false)} />}
       {canCancel && <button type="button" className="btn btn-ghost w-full" disabled={busy} onClick={() => run(async () => { await api(`/api/rides/${ride.id}/cancel`, { body: { reason: "Cancelada pelo passageiro" } }); reload(); })}>Cancelar corrida</button>}
       <ErrorNote>{error}</ErrorNote>
     </div>
@@ -605,7 +718,7 @@ function RateLast({ ride, onDone }: { ride: Ride; onDone: () => void }) {
   const { busy, error, run } = useAction();
   return (
     <div className="space-y-3">
-      <h1 className="display text-2xl md:text-3xl">Você chegou</h1>
+      <h1 className="display text-[1.9rem] leading-none md:text-4xl">Você chegou</h1>
       <p className="num text-sm text-muted">{brl(ride.totalCents)} · {METHOD_LABEL[ride.paymentMethod]}{ride.paymentMethod === "cash" ? " (pague ao motorista)" : ride.paymentMethod === "card_machine" ? " (pague na maquininha do motorista)" : ""}</p>
       {ride.driverPix && <PixPay pix={ride.driverPix} totalCents={ride.totalCents} />}
       {ride.pixCopyPaste && <div className="space-y-1"><p className="text-sm font-semibold">Pix copia e cola</p><textarea readOnly className="input text-xs" value={ride.pixCopyPaste} aria-label="Código Pix" /></div>}
@@ -631,8 +744,24 @@ export default function PassengerHome() {
   const wide3 = useWide(1024);
   const [firstName, setFirstName] = useState<string | undefined>();
   useEffect(() => { api<{ user: { name: string } }>("/api/me").then((r) => setFirstName(r.user.name.split(" ")[0])).catch(() => {}); }, []);
+  // Celular: começa na tela de início; o pedido com mapa abre quando a pessoa escolhe algo.
+  const [start, setStart] = useState<StartPick | null>(null);
+  const hasMoto = useHasMoto();
+  const saved = useSavedPlaces();
+  // Trajeto digitado no site antes de entrar: vai direto para o pedido.
+  useEffect(() => { try { if (sessionStorage.getItem("prumo-trip")) setStart({}); } catch { /* armazenamento bloqueado */ } }, []);
+  // ?pedir=1 (botão "Pedir uma viagem" de Viagens): abre direto na tela de destino, sem passar pelo início.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("pedir") !== "1") return;
+    setStart({});
+    q.delete("pedir");
+    history.replaceState(null, "", window.location.pathname + (q.size ? `?${q}` : ""));
+  }, []);
 
   const active = data?.active ?? null;
+  // Pediu a corrida: quando ela acabar, o app volta para a tela de início.
+  useEffect(() => { if (active) setStart(null); }, [!!active]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Carros online por perto (dados reais, posição aproximada). Atualiza a cada 15 s enquanto não há corrida.
   const [nearby, setNearby] = useState<{ count: number; cars: { lat: number; lng: number }[] } | null>(null);
@@ -668,24 +797,30 @@ export default function PassengerHome() {
     ...(active.driver?.lat != null && active.driver.lng != null ? [{ id: "car", kind: "car" as const, lat: active.driver.lat, lng: active.driver.lng, heading: active.driver.heading }] : []),
   ] : [];
 
+  if (showRequest && !wide && !start) {
+    const trips = (data?.history ?? []).filter((r) => r.status === "completed").slice(0, 3)
+      .map((r) => ({ id: r.id, dest: r.dest, totalCents: r.totalCents, categoryName: r.categoryName, endedAt: (r as unknown as { endedAt: string | null }).endedAt, createdAt: (r as unknown as { createdAt: string }).createdAt }));
+    return <PassengerStart firstName={firstName} greeting={greeting()} recent={recent} trips={trips} places={saved.places} hasMoto={hasMoto} online={nearby?.count ?? null} onStart={setStart} />;
+  }
+
   // Celular: tela menos a barra de cima (3,5rem) e a de baixo (4rem + margem do iPhone), para o botão de pedir nunca ficar escondido.
   return (
-    <div className="relative flex h-[calc(100svh-3.5rem-4rem-1px-env(safe-area-inset-bottom))] flex-col md:h-[calc(100svh-4rem)] lg:grid lg:grid-cols-[minmax(320px,370px)_minmax(0,1.15fr)_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] lg:gap-6 lg:p-6">
+    <div className="relative flex h-[calc(100svh-3.5rem-5.5rem-env(safe-area-inset-bottom))] flex-col md:h-[calc(100svh-4rem)] lg:grid lg:grid-cols-[minmax(320px,370px)_minmax(0,1.15fr)_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] lg:gap-6 lg:p-6">
       {/* Celular e tablet: o mapa ocupa a tela e o painel flutua por cima. Computador largo: o mapa é a terceira coluna. */}
-      <MapView className="min-h-[32%] flex-1 md:absolute md:inset-0 lg:relative lg:inset-auto lg:col-start-3 lg:row-start-1 lg:min-h-0 lg:overflow-hidden lg:rounded-[28px] lg:shadow-[0_0_0_1px_var(--line),0_30px_60px_-40px_rgb(0_0_0/.5)]" ariaLabel="Mapa da viagem" recenter
+      <MapView className="min-h-[32%] flex-1 md:absolute md:inset-0 lg:relative lg:inset-auto lg:col-start-3 lg:row-start-1 lg:min-h-0 lg:overflow-hidden lg:rounded-[28px] lg:shadow-[0_0_0_1px_var(--line)]" ariaLabel="Mapa da viagem" recenter
         padding={wide3 ? { top: 70, bottom: 60, left: 60, right: 60 } : wide ? { top: 90, bottom: 90, left: 540, right: 90 } : { top: 60, bottom: 50, left: 40, right: 40 }}
         points={active ? activePoints : mapState.points} route={active ? active.geometry : mapState.route} onPick={active ? undefined : mapState.onPick} picking={!active && mapState.picking}
         preview={active ? null : mapState.preview} routeLabel={active || wide3 ? null : mapState.routeLabel} endLabels={active || !wide3 ? null : mapState.endLabels} cars={active ? undefined : nearby?.cars}>
         {!active && nearby && (
-          <p className="pointer-events-none absolute top-3 left-1/2 z-10 flex w-max -translate-x-1/2 items-center gap-2 rounded-full bg-[#0f2a33]/90 px-3.5 py-2 text-xs font-semibold whitespace-nowrap text-white shadow-[0_8px_20px_-8px_rgb(0_0_0/.5)] backdrop-blur md:top-6 md:right-6 md:left-auto md:translate-x-0" role="status">
-            <span className={`size-2 rounded-full ${nearby.count ? "bg-[#5BD49B] shadow-[0_0_0_3px_rgb(91_212_155/.3)]" : "bg-[#F6C66A]"}`} />
+          <p className="pointer-events-none absolute top-3 left-1/2 z-10 flex w-max -translate-x-1/2 items-center gap-2 rounded-full bg-night px-3.5 py-2 text-xs font-semibold whitespace-nowrap text-white md:top-6 md:right-6 md:left-auto md:translate-x-0" role="status">
+            <span className={`size-2 rounded-full ${nearby.count ? "bg-ok " : "bg-warn"}`} />
             {nearby.count ? `${nearby.count} ${nearby.count === 1 ? "motorista online" : "motoristas online"} por perto` : "Nenhum motorista online por perto agora"}
           </p>
         )}
       </MapView>
       {/* Computador largo: no pedido, as duas primeiras colunas vêm do próprio painel (a seção "some" com display: contents);
           com corrida em andamento, um cartão ocupa as duas colunas. */}
-      <section className={`float-panel anim-sheet z-10 -mt-4 max-h-[calc(68%+1rem)] overflow-auto rounded-t-3xl bg-surface p-4 shadow-[0_-12px_40px_-20px_rgb(0_0_0/.5)] md:absolute md:top-6 md:bottom-6 md:left-6 md:mt-0 md:h-fit md:max-h-[calc(100%-3rem)] md:w-[460px] md:rounded-[28px] md:p-6 ${
+      <section className={`float-panel anim-sheet z-10 -mt-4 max-h-[calc(68%+1rem)] overflow-auto rounded-t-[28px] bg-surface p-4 pt-3 md:absolute md:top-6 md:bottom-6 md:left-6 md:mt-0 md:h-fit md:max-h-[calc(100%-3rem)] md:w-[460px] md:rounded-[32px] md:p-6 ${
         showRequest && wide3 ? "lg:contents" : "lg:static lg:col-span-2 lg:col-start-1 lg:row-start-1 lg:h-fit lg:max-h-full lg:w-auto lg:max-w-2xl"}`}>
         <span aria-hidden="true" className="mx-auto -mt-1 mb-3 block h-1.5 w-10 rounded-full bg-line md:hidden" />
         {loading && !data ? <Spinner />
@@ -698,7 +833,7 @@ export default function PassengerHome() {
               <button type="button" className="btn btn-primary w-full" onClick={() => setDismissed(lastFailed.id)}>Fazer novo pedido</button>
             </div>
           )
-          : <RequestPanel onCreated={reload} setMapState={setMapState} recent={recent} firstName={firstName} wide3={wide3} />}
+          : <RequestPanel onCreated={reload} setMapState={setMapState} recent={recent} firstName={firstName} wide3={wide3} start={start ?? undefined} onBack={wide ? undefined : () => { setStart(null); setMapState({ points: [], route: null }); }} />}
       </section>
     </div>
   );

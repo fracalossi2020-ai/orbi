@@ -22,6 +22,10 @@
   --font-body: var(--font-body-face);
   --radius-ui: var(--r);
   --radius-card: var(--r-lg);
+  --color-tint: var(--tint);
+  --color-tint-2: var(--tint-2);
+  --color-brand-solid: var(--brand-solid);
+  --color-night: var(--night);
 }
 
 /* ---------- Identidade Orbi (manual da marca) ----------
@@ -29,7 +33,7 @@
  * Cinza Neutro #E6E8EB · Branco. Degradê do símbolo: ciano #00E1FF → azul #0A3BFF. Fonte: Inter.
  */
 :root, [data-identity] {
-  --bg: #F5F7FA; --surface: #FFFFFF; --surface-2: #EDF0F4; --ink: #02060E; --muted: #536071; --line: #E1E5EA;
+  --bg: #FFFFFF; --surface: #FFFFFF; --surface-2: #F1F4F8; --ink: #02060E; --muted: #536071; --line: #E3E8EE;
   --primary: #0356C5; --on-primary: #FFFFFF; --accent: #0A1E3D; --on-accent: #FFFFFF; --mark: #5CC8FF; --accent-strong: #0A1E3D;
   --deep: #02060E; --on-deep: #F5F7FA; --on-deep-muted: #9AA8BD;
   --brand-text: #0356C5; --cta: #0356C5; --cta-ink: #FFFFFF;
@@ -47,28 +51,28 @@
   --brand-text: #6AA8FF; --cta: #2E7BFF;
 }
 
+/* Tons fixos da marca e painéis azulados que trocam com o tema (no lugar de hex solto nas telas). */
+:root { --tint: #EAF2FF; --tint-2: #DCE9FF; --brand-solid: #0356C5; --night: #02060E; }
+[data-theme="dark"] { --tint: #0E1C36; --tint-2: #152848; }
+
+/* Ícones do app (IconGlyph): squircle tonal chapado, sem degradê, brilho ou sombra. O glifo usa currentColor;
+ * --gl-bg é a cor atrás dele (recortes do ícone cheio). Com data-bare não há container. */
+.glyph {
+  --gl-bg: var(--tint); color: var(--primary); background: var(--gl-bg);
+  display: inline-grid; place-items: center; flex: none; border-radius: 30%;
+}
+.glyph > svg { display: block; }
+.glyph[data-tone="quiet"] { --gl-bg: var(--surface-2); color: var(--muted); }
+.glyph[data-tone="glass"] { --gl-bg: rgb(255 255 255 / .16); color: #fff; }
+[data-theme="dark"] .glyph { --gl-bg: color-mix(in srgb, var(--primary) 18%, var(--surface-2)); color: var(--brand-text); }
+[data-theme="dark"] .glyph[data-tone="quiet"] { --gl-bg: color-mix(in srgb, var(--muted) 16%, var(--surface-2)); color: var(--muted); }
+[data-theme="dark"] .glyph[data-tone="glass"] { --gl-bg: rgb(255 255 255 / .16); color: #fff; }
+.glyph[data-bare][data-tone], [data-theme="dark"] .glyph[data-bare][data-tone] { background: none; --gl-bg: var(--surface); border-radius: 0; }
+
 :root { --danger: #B3261E; --ok: #1B7F5A; --warn: #8A5A00; }
 [data-theme="dark"] { --danger: #FF8A80; --ok: #6FD6AE; --warn: #F6C66A; }
 
-/* Sem escolha salva, segue o tema do aparelho. Mesmos valores do bloco escuro. */
-@media (prefers-color-scheme: dark) {
-:root:not([data-theme]), :root:not([data-theme]) [data-identity] {
-  --bg: #02060E; --surface: #0A1222; --surface-2: #111C30; --ink: #F3F6FA; --muted: #95A2B6; --line: #1B2840;
-  --primary: #2E7BFF; --on-primary: #FFFFFF; --accent: #8FC3FF; --on-accent: #02060E; --accent-strong: #8FC3FF; --deep: #000206;
-  --brand-text: #6AA8FF; --cta: #2E7BFF;
-}
-:root:not([data-theme]) { --danger: #FF8A80; --ok: #6FD6AE; --warn: #F6C66A; }
-:root:not([data-theme]) .btn-danger { color: #2a0d0b; }
-}
-
-/* Texto e traços com o degradê do símbolo */
-.text-grad { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) section.bg-bg, :root:not([data-theme]) section.bg-surface {
-    background-image: radial-gradient(50% 40% at 90% 10%, rgb(11 107 255 / .12), transparent 60%), radial-gradient(40% 40% at 5% 95%, rgb(0 225 255 / .05), transparent 60%);
-  }
-}
+/* Sem escolha salva, o app abre claro, como o site. O escuro vale só quando a pessoa escolhe. */
 
 /* ---------- Base ---------- */
 html { background: var(--bg); color: var(--ink); -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
@@ -86,8 +90,8 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
 .btn { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 48px; padding: .7rem 1.4rem; border-radius: var(--r); font-weight: 600; letter-spacing: -.005em; line-height: 1.1; overflow: hidden; transition: transform .18s cubic-bezier(.2,.8,.2,1), box-shadow .2s, background-color .2s, color .2s, opacity .2s; cursor: pointer; white-space: nowrap; }
 .btn:active { transform: scale(.97); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
-.btn-primary { background: var(--primary); color: var(--on-primary); box-shadow: 0 1px 0 rgb(255 255 255 / .16) inset, 0 1px 2px rgb(0 0 0 / .1), 0 8px 20px -10px color-mix(in srgb, var(--primary) 70%, transparent); }
-.btn-primary:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 1px 0 rgb(255 255 255 / .16) inset, 0 1px 2px rgb(0 0 0 / .1), 0 14px 28px -12px color-mix(in srgb, var(--primary) 80%, transparent); }
+.btn-primary { background: var(--primary); color: var(--on-primary); }
+.btn-primary:not(:disabled):hover { transform: translateY(-1px); }
 .btn-ghost { background: transparent; color: var(--ink); box-shadow: 0 0 0 1px var(--line) inset; }
 .btn-ghost:not(:disabled):hover { background: var(--surface-2); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 30%, var(--line)) inset; }
 .btn-soft { background: var(--surface-2); color: var(--ink); }
@@ -100,6 +104,12 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
 .btn-line-deep:hover { box-shadow: 0 0 0 1.5px var(--on-deep) inset; transform: translateY(-2px); }
 .btn-lg { min-height: 56px; padding: .9rem 1.7rem; font-size: 1.05rem; }
 .btn-sm { min-height: 38px; padding: .4rem .9rem; font-size: .875rem; }
+@media (pointer: coarse) { .btn-sm { min-height: 44px; } }
+
+/* Esqueleto de carregamento: bloco que pulsa de leve no lugar do conteúdo que ainda não chegou. */
+.skeleton { background: var(--surface-2); border-radius: 22px; animation: sk-pulse 1.4s ease-in-out infinite; }
+@keyframes sk-pulse { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
 
 /* Campos preenchidos: fundo suave, sem borda; o foco acende um anel com a cor da marca */
 .input { width: 100%; min-height: 50px; padding: .7rem 1rem; border-radius: min(var(--r), 14px); background: var(--surface-2); color: var(--ink); box-shadow: 0 0 0 1px transparent inset; transition: box-shadow .15s, background-color .15s; }
@@ -146,21 +156,35 @@ select.input { appearance: auto; }
 /* Mapa */
 .maplibregl-map { font-family: inherit; }
 .maplibregl-ctrl-attrib { font-size: 10px; }
-/* Marcador prumo. O MapLibre posiciona o elemento externo com transform, então as animações ficam nos filhos. */
-.prumo-mk { position: relative; width: 34px; height: 62px; }
-.prumo-mk__drop { display: block; animation: prumo-drop .55s cubic-bezier(.2,.8,.2,1) both; }
-.prumo-mk__bob { display: block; overflow: visible; transform-origin: 17px 62px; filter: drop-shadow(0 4px 5px rgb(0 0 0 / .35)); animation: pin-settle .9s .35s cubic-bezier(.2,.8,.2,1) both; }
-@keyframes pin-settle { 0% { transform: scale(1, 1); } 30% { transform: scale(1.08, .9); } 60% { transform: scale(.97, 1.04); } 100% { transform: none; } }
-.prumo-mk__ring { position: absolute; left: 50%; bottom: -5px; width: 28px; height: 10px; margin-left: -14px; border-radius: 50%; background: color-mix(in srgb, var(--primary) 40%, transparent); box-shadow: 0 0 0 1.5px #fff; }
-/* Parada: o mesmo prumo, menor, para não competir com partida e destino. */
-.prumo-mk--stop { width: 26px; height: 47px; }
-.prumo-mk--stop .prumo-mk__bob { width: 26px; height: 47px; transform-origin: 13px 47px; }
-.prumo-mk--origin .prumo-mk__ring { background: color-mix(in srgb, var(--accent) 40%, transparent); }
-/* GPS: o prumo procura o ponto (balança de leve) e a base pulsa onde você está. */
-.prumo-mk--me .prumo-mk__ring::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--primary); animation: prumo-pulse 1.9s ease-out infinite; }
-@keyframes prumo-drop { from { transform: translateY(-34px); opacity: 0; } to { transform: none; opacity: 1; } }
+/* Marcadores do mapa. O mapa é sempre claro: as cores são fixas e não seguem o tema do app. */
+.maplibregl-map { --mk-start: #0A1E3D; --mk-end: #0356C5; --mk-glass: #0A1E3D; --mk-light: #5CC8FF; --mk-tail: #E5484D; --mk-shadow: rgb(2 6 14 / .28); }
+/* O MapLibre posiciona o elemento externo com transform: as animações ficam só nos filhos (transform e opacity). */
+.prumo-mk { position: relative; width: 24px; height: 40px; }
+.prumo-mk--dest { width: 26px; height: 42px; }
+.prumo-mk--stop { width: 20px; height: 26px; }
+.prumo-mk--me { width: 44px; height: 44px; }
+.prumo-mk__drop { position: absolute; inset: 0; display: block; animation: mk-drop .5s cubic-bezier(.2,.8,.2,1) both; }
+.prumo-mk__head { position: absolute; top: 0; left: 0; display: grid; place-items: center; box-sizing: border-box; width: 24px; height: 24px; border-radius: 50%; border: 2.5px solid #fff; background: linear-gradient(160deg, color-mix(in srgb, var(--mk-start), #fff 18%), var(--mk-start)); filter: drop-shadow(0 2px 3px var(--mk-shadow)); }
+.prumo-mk__head i { display: block; width: 8px; height: 8px; border-radius: 50%; background: #fff; }
+.prumo-mk__stem { position: absolute; top: 22px; left: 50%; width: 3px; height: 12px; margin-left: -1.5px; background: var(--mk-start); }
+.prumo-mk__base { position: absolute; bottom: 0; left: 50%; width: 10px; height: 4px; margin-left: -5px; border-radius: 50%; background: var(--mk-shadow); }
+.prumo-mk--dest .prumo-mk__head { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(160deg, color-mix(in srgb, var(--mk-end), #fff 18%), var(--mk-end)); }
+.prumo-mk--dest .prumo-mk__head i { border-radius: 2px; }
+.prumo-mk--dest .prumo-mk__stem { top: 24px; background: var(--mk-end); }
+.prumo-mk--stop .prumo-mk__head { width: 20px; height: 20px; border-radius: 5px; border: 3px solid var(--mk-end); background: #fff; }
+.prumo-mk--stop .prumo-mk__head b { font-size: 11px; font-weight: 800; line-height: 1; color: var(--mk-start); font-variant-numeric: tabular-nums; }
+.prumo-mk--stop .prumo-mk__stem { top: 18px; width: 2px; height: 8px; margin-left: -1px; background: var(--mk-end); }
+.prumo-mk--preview { opacity: .85; }
+/* GPS: ponto no centro, com halo fixo e um anel que pulsa. */
+.prumo-mk--me .prumo-mk__drop { animation: none; }
+.prumo-mk__halo, .prumo-mk__pulse, .prumo-mk__dot { position: absolute; top: 50%; left: 50%; border-radius: 50%; }
+.prumo-mk__halo { width: 44px; height: 44px; margin: -22px 0 0 -22px; background: color-mix(in srgb, var(--mk-end) 14%, transparent); }
+.prumo-mk__pulse { width: 18px; height: 18px; margin: -9px 0 0 -9px; border: 2px solid var(--mk-end); box-sizing: border-box; animation: mk-pulse 2.4s ease-out infinite; }
+.prumo-mk__dot { box-sizing: border-box; width: 18px; height: 18px; margin: -9px 0 0 -9px; background: var(--mk-end); border: 3px solid #fff; box-shadow: 0 1px 4px var(--mk-shadow); }
 @keyframes prumo-settle { 0% { transform: rotate(10deg); } 22% { transform: rotate(-7deg); } 44% { transform: rotate(4deg); } 66% { transform: rotate(-2deg); } 84% { transform: rotate(.8deg); } 100% { transform: none; } }
 @keyframes prumo-sway { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+@keyframes mk-drop { from { transform: translateY(-26px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes mk-pulse { from { transform: scale(1); opacity: .6; } to { transform: scale(2.2); opacity: 0; } }
 @keyframes prumo-pulse { from { transform: scale(.7); opacity: .9; } to { transform: scale(2.8); opacity: 0; } }
 /* Troca de página: a antiga sai subindo e esmaecendo; a nova entra de baixo. */
 ::view-transition-old(.page-swap) { animation: page-out .22s ease-in both; }
@@ -221,9 +245,7 @@ input[type="checkbox"], input[type="radio"] { flex-shrink: 0; }
 .map-loading { background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / .55) 50%, transparent 65%) #ece8e1; background-size: 250% 100%; animation: map-shimmer 1.4s linear infinite; }
 @keyframes map-shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
 @media (prefers-reduced-motion: reduce) { .map-loading { animation: none; } }
-/* Prévia de uma sugestão da busca: prumo translúcido com o nome do lugar num balão. */
-.prumo-mk--preview .prumo-mk__bob { opacity: .85; }
-.prumo-mk--preview .prumo-mk__ring::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--accent); animation: prumo-pulse 1.6s ease-out infinite; }
+/* Prévia de uma sugestão da busca: partida translúcida com o nome do lugar num balão. */
 .map-tag { position: relative; display: flex; flex-direction: column; gap: 1px; max-width: 240px; padding: 7px 12px 8px; border-radius: 14px; background: var(--deep); color: var(--on-deep); font-size: 13px; line-height: 1.2; box-shadow: 0 10px 24px -10px rgb(0 0 0 / .55); white-space: nowrap; animation: map-tag-in .35s cubic-bezier(.2,.8,.2,1) both; pointer-events: none; }
 .map-tag b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
 .map-tag small { font-size: 11px; opacity: .72; overflow: hidden; text-overflow: ellipsis; }
@@ -231,6 +253,8 @@ input[type="checkbox"], input[type="radio"] { flex-shrink: 0; }
 /* Etiquetas presas na partida e no destino (computador). O MapLibre posiciona o host; a animação fica no filho. */
 .end-tag-host { pointer-events: none; }
 .end-tag { display: flex; align-items: stretch; max-width: 220px; overflow: hidden; border-radius: 12px; background: #fff; color: #17252b; box-shadow: 0 10px 28px -12px rgb(0 0 0 / .45), 0 0 0 1px rgb(0 0 0 / .06); font-size: 13px; line-height: 1.2; animation: map-tag-in .4s .3s cubic-bezier(.2,.8,.2,1) both; }
+.end-tag__ico { flex: none; align-self: center; width: 10px; height: 10px; margin-left: 10px; border-radius: 50%; background: #0A1E3D; }
+.end-tag__ico--dest { border-radius: 3px; background: #0356C5; }
 .end-tag__badge { display: grid; place-items: center; align-content: center; min-width: 44px; padding: 6px 8px; background: var(--deep); color: var(--on-deep); font-weight: 800; font-size: 16px; font-variant-numeric: tabular-nums; }
 .end-tag__badge small { font-size: 10px; font-weight: 600; opacity: .8; }
 .end-tag__text { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding: 7px 12px; }
@@ -245,19 +269,22 @@ input[type="checkbox"], input[type="radio"] { flex-shrink: 0; }
 @keyframes map-tag-in { from { transform: translateY(6px) scale(.92); opacity: 0; } to { transform: none; opacity: 1; } }
 /* Carros online por perto, vistos de cima */
 .ambient-car { width: 30px; height: 30px; display: grid; place-items: center; }
-.ambient-car > span { display: grid; place-items: center; animation: map-tag-in .5s ease-out both; }
-.ambient-car svg { filter: drop-shadow(0 3px 3px rgb(0 0 0 / .35)); }
+.ambient-car > span { display: grid; place-items: center; opacity: .85; animation: ambient-in .4s ease-out both; }
+.ambient-car__rot { display: block; line-height: 0; }
+.ambient-car svg { display: block; filter: drop-shadow(0 1px 2px var(--mk-shadow)); }
+@keyframes ambient-in { from { transform: scale(.9); opacity: 0; } to { transform: none; opacity: .85; } }
 /* Painel flutuante sobre o mapa (computador) */
 @media (min-width: 768px) {
-  .float-panel { background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(16px) saturate(1.2); -webkit-backdrop-filter: blur(16px) saturate(1.2); box-shadow: 0 30px 80px -30px rgb(0 0 0 / .55), 0 0 0 1px var(--line); }
+  .float-panel { background: var(--surface); box-shadow: 0 0 0 1px var(--line), 0 -10px 30px -22px rgb(2 6 14 / .35); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .map-tag, .map-eta > span, .ambient-car > span, .prumo-mk--preview .prumo-mk__bob, .prumo-mk--preview .prumo-mk__ring::after { animation: none; }
+  .map-tag, .map-eta > span, .ambient-car > span, .prumo-mk__drop, .prumo-mk__pulse { animation: none; }
 }
-/* Carro do motorista ao vivo (posição do GPS do celular dele) */
-.live-car { position: relative; width: 44px; height: 44px; display: grid; place-items: center; }
-.live-car__pulse { position: absolute; inset: 4px; border-radius: 50%; background: color-mix(in srgb, var(--primary) 22%, transparent); animation: prumo-pulse 2s ease-out infinite; }
-.live-car__body { display: grid; place-items: center; transition: transform .8s cubic-bezier(.2,.8,.2,1); filter: drop-shadow(0 4px 5px rgb(0 0 0 / .35)); }
+/* Carro do motorista ao vivo (posição do GPS do celular dele): halo de 40 px com pulso, corpo gira com a direção. */
+.live-car { position: relative; width: 48px; height: 48px; display: grid; place-items: center; }
+.live-car__pulse { position: absolute; top: 50%; left: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; background: color-mix(in srgb, var(--mk-end) 18%, transparent); animation: mk-halo 2.4s ease-out infinite; }
+.live-car__body { display: grid; place-items: center; line-height: 0; transition: transform .8s cubic-bezier(.2,.8,.2,1); filter: drop-shadow(0 2px 3px var(--mk-shadow)); }
+@keyframes mk-halo { from { transform: scale(.8); opacity: .9; } to { transform: scale(1.35); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .live-car__pulse { animation: none; } }
 .car-dot { width: 22px; height: 22px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 28%, transparent), 0 4px 10px rgb(0 0 0 / .35); border: 3px solid #fff; transition: transform .8s linear; }
 
@@ -303,3 +330,63 @@ html:has(.site-one), html:has(.site-one) body { background: #FFFFFF; }
 @media (prefers-reduced-motion: reduce) { .hero-mark, .live-ping { animation: none; } }
 /* No site, botões sem sombra colorida (o fundo é branco e chapado). */
 .site-one .btn-primary, .site-one .btn-primary:not(:disabled):hover { box-shadow: none; }
+
+/* ---------- Site: perguntas frequentes ---------- */
+/* A resposta abre deslizando (onde o navegador permite) e usa a letra dos títulos. */
+.site-one { interpolate-size: allow-keywords; }
+.faq-answer { font-family: var(--font-display-face), system-ui, sans-serif; font-weight: 500; letter-spacing: -.01em; }
+.faq-item::details-content { block-size: 0; overflow: hidden; transition: block-size .45s cubic-bezier(.2,.8,.2,1), content-visibility .45s allow-discrete; }
+.faq-item[open]::details-content { block-size: auto; }
+
+/* ---------- Site: rolagem ----------
+ * Quanto mais a pessoa desce, mais a página "chega perto": a abertura se afasta, cada painel cresce até ocupar
+ * seu lugar, os títulos sobem e o símbolo gira. Só CSS, presa à rolagem; sem efeito em "reduzir movimento"
+ * e em navegadores sem animação por rolagem (aí tudo aparece parado, já no lugar). */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .site-one main section.hero-light > div { animation: site-hero-out linear both; animation-timeline: view(); animation-range: exit 0% exit 90%; }
+    .site-one main section.on-deep:not(.hero-light), .site-one main section[data-panel] {
+      transform-origin: 50% 0; animation: site-panel-in linear both; animation-timeline: view(); animation-range: entry 0% cover 32%;
+    }
+    .site-one main h2.display { animation: site-rise linear both; animation-timeline: view(); animation-range: entry 5% cover 28%; }
+    .site-one .hero-mark { animation: hero-mark 14s ease-in-out infinite, site-spin linear both; animation-timeline: auto, scroll(root); }
+    .site-one footer p.display { animation: site-rise linear both; animation-timeline: view(); animation-range: entry 0% entry 100%; }
+  }
+}
+@keyframes site-hero-out { to { opacity: .15; transform: translateY(-6%) scale(.95); } }
+@keyframes site-panel-in { from { transform: scale(.9); opacity: .35; border-radius: 72px; } }
+@keyframes site-rise { from { opacity: 0; transform: translateY(56px); } }
+@keyframes site-spin { to { rotate: 160deg; } }
+
+/* ---------- App: procurando motorista ----------
+ * A órbita do símbolo: um anel gira em volta do ponto de partida enquanto a corrida é oferecida. */
+.seek-orbit { position: relative; width: 64px; height: 64px; }
+.seek-orbit::before { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.seek-orbit > i { position: absolute; inset: 0; border-radius: 50%; animation: seek-spin 1.6s linear infinite; }
+.seek-orbit > i::after { content: ""; position: absolute; top: -5px; left: 50%; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--primary); }
+.seek-orbit > b { position: absolute; inset: 22px; border-radius: 50%; background: var(--primary); }
+@keyframes seek-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .seek-orbit > i { animation: none; } }
+.seek-orbit--light::before { border-color: rgb(255 255 255 / .3); }
+.seek-orbit--light > i::after, .seek-orbit--light > b { background: #FFFFFF; }
+
+/* Cartão azul do pedido (passageiro): campos brancos sobre o Azul Elétrico, nos dois temas. */
+.trip-card .input, .trip-card .input:focus { background: #FFFFFF; color: #02060E; }
+.trip-card .input:focus { box-shadow: 0 0 0 2px #FFFFFF inset, 0 0 0 4px rgb(255 255 255 / .45); }
+
+/* ---------- Entrada do app (/entrar) ----------
+ * Azul bem claro, esferas de vidro nos cantos e campos/blocos de vidro fosco. No tema escuro, o mesmo em azul-noite. */
+.auth-glass { --ag-glass: rgb(255 255 255 / .66); --ag-edge: rgb(255 255 255 / .95); --ag-shadow: 0 16px 34px -20px rgb(3 86 197 / .45);
+  background: linear-gradient(180deg, #F5F9FF 0%, #E6EFFF 100%); color: #02060E; }
+[data-theme="dark"] .auth-glass { --ag-glass: rgb(255 255 255 / .06); --ag-edge: rgb(255 255 255 / .14); --ag-shadow: 0 16px 34px -20px rgb(0 0 0 / .7);
+  background: linear-gradient(180deg, #040B18 0%, #0A1A33 100%); color: #F3F6FA; }
+.ag-glass { background: var(--ag-glass); border: 1px solid var(--ag-edge); box-shadow: var(--ag-shadow), inset 0 1px 0 var(--ag-edge); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+.ag-sphere { position: absolute; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle at 32% 28%, #FFFFFF 0%, #DCE8FF 32%, #A9C7FF 68%, #7EAAFF 100%); opacity: .5;
+  box-shadow: inset -12px -16px 32px rgb(3 86 197 / .16), 0 24px 48px -26px rgb(3 86 197 / .45); }
+[data-theme="dark"] .ag-sphere { background: radial-gradient(circle at 32% 28%, #3866B8 0%, #163A78 45%, #0A2048 100%); opacity: .55; }
+.auth-glass .input { min-height: 56px; border-radius: 20px; background: var(--ag-glass); color: inherit; border: 1px solid var(--ag-edge); box-shadow: var(--ag-shadow), inset 0 1px 0 var(--ag-edge); }
+.auth-glass .input:focus { background: var(--ag-glass); box-shadow: 0 0 0 2px #0356C5 inset, 0 0 0 5px rgb(3 86 197 / .16); }
+.ag-cta { color: #FFFFFF; background: linear-gradient(180deg, #3B86FF 0%, #0356C5 100%); box-shadow: 0 18px 32px -16px rgb(3 86 197 / .75), inset 0 1px 0 rgb(255 255 255 / .35); transition: transform .15s, filter .15s; }
+.ag-cta:not(:disabled):hover { transform: translateY(-1px); filter: brightness(1.05); }
+.ag-cta:disabled { opacity: .7; }

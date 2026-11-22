@@ -1,6 +1,6 @@
-import { Body, Legal, PageHead } from "@/components/site/Page";
-import { Note } from "@/components/ui";
-import { DRIVER_TERMS_VERSION } from "@/domain/driver-rules";
+import { Body, Legal, PageHead } from "@/frontend/components/site/Page";
+import { Note } from "@/frontend/components/ui";
+import { DRIVER_TERMS_VERSION } from "@/shared/driver-rules";
 
 export const metadata = { title: "Termo de adesão do motorista parceiro", description: "Regras, direitos e deveres de quem dirige com a Orbi." };
 
