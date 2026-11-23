@@ -4,7 +4,7 @@ import { PageTitle } from "@/frontend/components/app/AppShell";
 import { Icon } from "@/frontend/components/Icon";
 import { api, Badge, dateTime, Empty, ErrorNote, Field, Note, pct, Spinner, useAction, useLive } from "@/frontend/components/ui";
 import { brl } from "@/shared/pricing";
-import { planSpec } from "@/shared/plans";
+import { FREE_TIER, PLAN_SPECS } from "@/shared/plans";
 import Link from "next/link";
 
 type Partner = { id: string; name: string; category: string; city: string; address: string; phone: string; benefit: string };
@@ -71,39 +71,46 @@ export default function ClubePage() {
         </section>
       )}
 
+      <section className="card mt-6 p-5" aria-labelledby="gratis" data-testid="nivel-gratis">
+        <div className="flex items-center gap-2"><h2 id="gratis" className="display text-2xl">O que você já tem</h2><Badge tone="brand">Grátis</Badge></div>
+        <p className="mt-1 text-sm text-muted">{FREE_TIER.tagline} Todo motorista aprovado usa, e a Orbi não cobra nada.</p>
+        <ul className="mt-4 space-y-2 text-sm">
+          {FREE_TIER.benefits.map((b) => <li key={b} className="flex gap-2"><Icon name="check" size={18} className="mt-px shrink-0 text-brand" />{b}</li>)}
+        </ul>
+      </section>
+
       <section className="mt-6" aria-labelledby="planos">
-        <h2 id="planos" className="display mb-1 text-2xl">Planos para motoristas</h2>
-        <p className="mb-4 text-sm text-muted">Desconto nas oficinas parceiras do Vale do Aço e, nos planos maiores, crédito todo mês e comissão menor. Não é seguro: a oficina responde pelo serviço.</p>
-        {!data.plans.length ? <Note>Nenhum plano disponível no momento. A comissão padrão da sua cidade continua valendo.</Note> : (
-          <ul className="grid gap-3 lg:grid-cols-3">
-            {data.plans.map((p) => {
-              const spec = planSpec(p.tier);
-              const mine = data.current?.planId === p.id;
-              const top = p.tier === "pro";
-              return (
-                <li key={p.id} data-testid={`plan-${p.tier ?? p.id}`} className={`relative flex flex-col rounded-[26px] p-5 ${top ? "bg-brand-solid text-white" : "card"}`}>
-                  {top && <span className="absolute -top-2.5 right-5 rounded-full bg-night px-2.5 py-1 text-[11px] font-bold text-white">Mais completo</span>}
-                  <p className="display text-2xl">{p.name}</p>
-                  <p className={`text-sm ${top ? "text-white/80" : "text-muted"}`}>{spec?.tagline ?? p.description}</p>
-                  <p className="num mt-3"><span className="display text-4xl">{brl(p.priceCents)}</span><span className={`text-sm ${top ? "text-white/80" : "text-muted"}`}> / {p.periodDays} dias</span></p>
-                  <p className={`num text-sm ${top ? "text-white/80" : "text-muted"}`}>Comissão de {pct(p.commissionBps)} nas corridas</p>
-                  {spec && (
-                    <ul className="mt-4 flex-1 space-y-2 text-sm">
-                      {spec.benefits.map((b) => <li key={b} className="flex gap-2"><Icon name="check" size={18} className={`mt-px shrink-0 ${top ? "text-white" : "text-brand"}`} />{b}</li>)}
-                    </ul>
-                  )}
-                  {mine && <p className={`mt-4 text-sm font-semibold ${top ? "" : "text-ok"}`}>Seu plano, ativo até {dateTime(data.current!.until)}</p>}
-                  <button type="button" className={`btn btn-sm mt-4 w-full ${top ? "bg-white text-night" : "btn-primary"}`} disabled={busy}
-                    onClick={() => { if (window.confirm(`Assinar o ${p.name} por ${brl(p.priceCents)}? O valor sai do seu saldo na Orbi. Ao assinar, você aceita os termos do plano.`)) run(async () => { await api("/api/driver/plan", { body: { planId: p.id } }); reload(); }); }}>
-                    {mine ? "Renovar por mais 30 dias" : "Assinar com meu saldo"}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        <h2 id="planos" className="display mb-1 text-2xl">Planos pagos</h2>
+        <p className="mb-4 text-sm text-muted">Plus e Pro chegam em breve, com comissão menor, crédito mensal e guincho. Ainda não dá para assinar. Não é seguro: a oficina responde pelo serviço.</p>
+        <ul className="grid gap-3 lg:grid-cols-2">
+          {PLAN_SPECS.map((spec) => {
+            const p = data.plans.find((x) => x.tier === spec.tier);
+            const mine = !!p && data.current?.planId === p.id;
+            const top = spec.tier === "pro";
+            return (
+              <li key={spec.tier} data-testid={`plan-${spec.tier}`} className={`relative flex flex-col rounded-[26px] p-5 ${top ? "bg-brand-solid text-white" : "card"}`}>
+                <p className="display text-2xl">{spec.name}{!p && <span className={`ml-2 align-middle text-xs font-bold ${top ? "text-white/80" : "text-muted"}`}>EM BREVE</span>}</p>
+                <p className={`text-sm ${top ? "text-white/80" : "text-muted"}`}>{spec.tagline}</p>
+                {p && <p className="num mt-3"><span className="display text-4xl">{brl(p.priceCents)}</span><span className={`text-sm ${top ? "text-white/80" : "text-muted"}`}> / {p.periodDays} dias</span></p>}
+                <p className={`num mt-2 text-sm ${top ? "text-white/80" : "text-muted"}`}>Comissão de {pct(p?.commissionBps ?? spec.commissionBps)} nas corridas</p>
+                <ul className="mt-4 flex-1 space-y-2 text-sm">
+                  {spec.benefits.map((b) => <li key={b} className="flex gap-2"><Icon name="check" size={18} className={`mt-px shrink-0 ${top ? "text-white" : "text-brand"}`} />{b}</li>)}
+                </ul>
+                {p ? (
+                  <>
+                    {mine && <p className={`mt-4 text-sm font-semibold ${top ? "" : "text-ok"}`}>Seu plano, ativo até {dateTime(data.current!.until)}</p>}
+                    <button type="button" className={`btn btn-sm mt-4 w-full ${top ? "bg-white text-night" : "btn-primary"}`} disabled={busy}
+                      onClick={() => { if (window.confirm(`Assinar o ${p.name} por ${brl(p.priceCents)}? O valor sai do seu saldo na Orbi. Ao assinar, você aceita os termos do plano.`)) run(async () => { await api("/api/driver/plan", { body: { planId: p.id } }); reload(); }); }}>
+                      {mine ? "Renovar por mais 30 dias" : "Assinar com meu saldo"}
+                    </button>
+                  </>
+                ) : <p className={`mt-4 text-sm font-semibold ${top ? "" : "text-muted"}`}>Em breve, sem preço definido ainda.</p>}
+              </li>
+            );
+          })}
+        </ul>
         <div className="mt-2"><ErrorNote>{error}</ErrorNote></div>
-        <p className="mt-3 text-sm"><Link href="/motorista/clube/termos" className="font-semibold underline">Ler os termos dos planos</Link></p>
+        <p className="mt-3 text-sm"><Link href="/motorista/clube/termos" className="font-semibold underline">Ler os termos do Clube</Link></p>
       </section>
     </>
   );

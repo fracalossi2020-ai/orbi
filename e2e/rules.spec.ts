@@ -545,3 +545,21 @@ test("a cópia dos dados do motorista não leva dados do passageiro; lista da eq
   const users = (await (await admin.get("/api/admin/users")).json()).rows as Record<string, unknown>[];
   for (const u of users) for (const k of ["passwordHash", "totpSecret", "recoveryCodes", "googleSub", "pendingEmail"]) expect(u, k).not.toHaveProperty(k);
 });
+
+test("Clube: planos pagos desligados não podem ser assinados", async () => {
+  const admin = await adminApi();
+  const { c } = await approvedDriverApi(admin);
+  const plans = (await (await admin.get("/api/admin/r/plans")).json()).rows as { id: string; tier: string | null; active: boolean }[];
+  const plus = plans.find((p) => p.tier === "plus")!;
+  const pro = plans.find((p) => p.tier === "pro")!;
+  expect(plus.active).toBe(false);
+  expect(pro.active).toBe(false);
+  // O motorista não vê plano desligado na lista do Clube.
+  const club = await (await c.get("/api/driver/club")).json();
+  expect(club.plans.map((p: { tier: string }) => p.tier)).not.toContain("plus");
+  for (const p of [plus, pro]) {
+    const res = await c.post("/api/driver/plan", { data: { planId: p.id } });
+    expect(res.status()).toBe(409);
+    expect(await res.text()).toContain("Este plano ainda não está disponível");
+  }
+});

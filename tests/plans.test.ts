@@ -1,36 +1,41 @@
 import { describe, expect, it } from "vitest";
-import { PLAN_GENERAL_TERMS, PLAN_SPECS, planSpec } from "@/shared/plans";
+import { FREE_TIER, PAID_PLANS_ENABLED_AT_LAUNCH, PLAN_GENERAL_TERMS, PLAN_SPECS, planSpec, planSubscribeError } from "@/shared/plans";
 
-describe("planos do motorista", () => {
-  const [basico, plus, pro] = ["basico", "plus", "pro"].map((t) => planSpec(t)!);
+describe("Clube do motorista", () => {
+  const [plus, pro] = ["plus", "pro"].map((t) => planSpec(t)!);
 
-  it("tem os três planos com os preços combinados", () => {
-    expect(PLAN_SPECS.map((p) => [p.tier, p.priceCents])).toEqual([["basico", 9900], ["plus", 16900], ["pro", 28900]]);
+  it("não existe mais o Básico pago, só Plus e Pro com os valores novos", () => {
+    expect(PLAN_SPECS.map((p) => [p.tier, p.priceCents, p.commissionBps, p.monthlyCreditCents])).toEqual([["plus", 12900, 1400, 4000], ["pro", 28900, 1300, 8000]]);
+    expect(planSpec("basico")).toBeNull();
+    expect(pro.benefits.join(" ")).toMatch(/até R\$ 150/);
   });
 
-  it("cada plano acima dá mais que o de baixo", () => {
-    for (const [lo, hi] of [[basico, plus], [plus, pro]]) {
-      expect(hi.commissionBps).toBeLessThan(lo.commissionBps + 1);
-      expect(hi.laborDiscountBps).toBeGreaterThan(lo.laborDiscountBps);
-      expect(hi.monthlyCreditCents).toBeGreaterThanOrEqual(lo.monthlyCreditCents);
-      expect(hi.checkupEveryDays).toBeLessThan(lo.checkupEveryDays);
-      expect(hi.benefits.length).toBeGreaterThan(lo.benefits.length);
-    }
-    // O Pro é bem mais completo que o Plus.
+  it("os planos pagos nascem desligados e o nível grátis não promete crédito nem comissão", () => {
+    expect(PAID_PLANS_ENABLED_AT_LAUNCH).toBe(false);
+    const gratis = FREE_TIER.benefits.join(" ");
+    expect(gratis).not.toMatch(/crédito|comissão|R\$/);
+    expect(gratis).toMatch(/oficinas parceiras/);
+  });
+
+  it("o Pro dá mais que o Plus, e o crédito nunca passa do preço", () => {
+    expect(pro.commissionBps).toBeLessThan(plus.commissionBps);
+    expect(pro.laborDiscountBps).toBeGreaterThan(plus.laborDiscountBps);
+    expect(pro.checkupEveryDays).toBeLessThan(plus.checkupEveryDays);
     expect(pro.benefits.length - plus.benefits.length).toBeGreaterThanOrEqual(3);
-  });
-
-  it("só os planos maiores têm crédito, e com limite", () => {
-    expect(basico.monthlyCreditCents).toBe(0);
-    expect(plus.monthlyCreditCents).toBeGreaterThan(0);
-    // O crédito nunca passa do preço do plano: o custo da Orbi tem teto.
     for (const p of PLAN_SPECS) expect(p.monthlyCreditCents).toBeLessThan(p.priceCents);
   });
 
-  it("os termos dizem que não é seguro e explicam o cancelamento", () => {
+  it("assinar plano desligado dá 409, e plano inexistente 404", () => {
+    expect(planSubscribeError({ active: false })).toEqual({ status: 409, message: "Este plano ainda não está disponível." });
+    expect(planSubscribeError(null)?.status).toBe(404);
+    expect(planSubscribeError({ active: true })).toBeNull();
+  });
+
+  it("os termos dizem que não é seguro, explicam o cancelamento e não citam o Básico", () => {
     const all = PLAN_GENERAL_TERMS.flatMap((g) => g.items).join(" ");
-    expect(all).toMatch(/Não é seguro/);
+    expect(all).toMatch(/Não é seguro|não é seguro/i);
     expect(all).toMatch(/7 dias/);
+    expect(JSON.stringify([PLAN_GENERAL_TERMS, PLAN_SPECS, FREE_TIER])).not.toMatch(/Básico/);
     for (const p of PLAN_SPECS) expect(p.terms.length).toBeGreaterThan(0);
   });
 

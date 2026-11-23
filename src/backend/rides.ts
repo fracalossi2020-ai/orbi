@@ -19,6 +19,7 @@ import { publish, rideChannel, STAFF_CHANNEL, userChannel } from "./bus";
 import { createPixCharge, getPixStatus, paymentAvailability } from "./payments";
 import { startOfPeriodSp } from "./sql-time";
 import { audit } from "./audit-lite";
+import { blockedByDebt } from "./debt";
 
 class RideError extends Error {
   status = 409;

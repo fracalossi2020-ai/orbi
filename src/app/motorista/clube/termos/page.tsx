@@ -1,14 +1,14 @@
 import { PageTitle } from "@/frontend/components/app/AppShell";
-import { PLAN_GENERAL_TERMS, PLAN_SPECS } from "@/shared/plans";
+import { FREE_TIER, PLAN_GENERAL_TERMS, PLAN_SPECS } from "@/shared/plans";
 import { brl } from "@/shared/pricing";
 
-export const metadata = { title: "Termos dos planos · Orbi" };
+export const metadata = { title: "Termos do Clube · Orbi" };
 
 /** Termos dos planos do motorista: regras gerais e o que vale só em cada plano. */
 export default function PlanTermsPage() {
   return (
     <>
-      <PageTitle sub="Leia antes de assinar. Ao assinar um plano, você concorda com estas regras.">Termos dos planos</PageTitle>
+      <PageTitle sub="Regras do Clube Orbi. Os planos pagos ainda não estão à venda.">Termos do Clube</PageTitle>
 
       <div className="space-y-6">
         {PLAN_GENERAL_TERMS.map((g, i) => (

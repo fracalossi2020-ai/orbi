@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import type { Db } from "./index";
 import * as s from "./schema";
 import { DEFAULT_WEIGHTS } from "@/shared/dispatch";
-import { PLAN_SPECS } from "@/shared/plans";
+import { PAID_PLANS_ENABLED_AT_LAUNCH, PLAN_SPECS } from "@/shared/plans";
 
 /**
  * Só configuração de base: cidades da primeira operação, modalidades, categorias, tarifas e planos do motorista.
@@ -52,7 +52,7 @@ async function ensureMotoCategory(db: Db) {
 /** Os três planos do Clube Orbi (Básico, Plus, Pro), também em bancos antigos. Quem já existe não é mexido. */
 async function ensureDriverPlans(db: Db) {
   await db.insert(s.plans).values(PLAN_SPECS.map((p) => ({
-    tier: p.tier, name: p.name, description: p.tagline, priceCents: p.priceCents, periodDays: 30, commissionBps: p.commissionBps,
+    tier: p.tier, name: p.name, description: p.tagline, priceCents: p.priceCents, periodDays: 30, commissionBps: p.commissionBps, active: PAID_PLANS_ENABLED_AT_LAUNCH,
   }))).onConflictDoNothing({ target: s.plans.tier });
 }
 

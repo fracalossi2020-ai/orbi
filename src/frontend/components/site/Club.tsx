@@ -50,6 +50,7 @@ export function Club() {
           <motion.h2 style={reduce ? undefined : { y }} className="display text-[clamp(2.4rem,6vw,5.4rem)]">Quem movimenta a cidade também merece ser valorizado.</motion.h2>
           <div>
             <p className="text-on-deep-muted md:text-lg">O Clube Orbi reúne parceiros locais com condições especiais para motoristas cadastrados. No aplicativo, “Minha Economia” mostra quanto você deixou de gastar.</p>
+            <p className="mt-3 text-sm text-on-deep-muted">No lançamento o Clube é grátis: todo motorista aprovado vê as oficinas parceiras e usa o desconto de cada uma. Planos pagos com mais vantagens virão depois.</p>
             <p className="mt-3 text-sm text-on-deep-muted">Estamos buscando as primeiras parcerias no Vale do Aço. Os segmentos abaixo são os que queremos atender.</p>
           </div>
         </div>

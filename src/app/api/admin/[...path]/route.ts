@@ -17,7 +17,9 @@ import { nextRideCursor, pageParams, ridesBefore, ridesOrder } from "@/backend/p
 import { dayEndSp, dayLabelSp, dayStartSp } from "@/backend/sql-time";
 import { isIsoDay } from "@/shared/iso-day";
 import { staffChargeProblem } from "@/shared/ride-resolution";
-import { settleWithdrawal } from "@/backend/driver-finance";
+import { resolveSettlement, settleWithdrawal } from "@/backend/driver-finance";
+import { debtLimitCents, orbiPix } from "@/backend/debt";
+import { debtLevel } from "@/shared/debt";
 import { publish, STAFF_CHANNEL, userChannel } from "@/backend/bus";
 import { STAFF } from "@/shared/permissions";
 import { staffUserView } from "@/shared/account";
@@ -120,7 +122,8 @@ export const GET = route<P>(async ({ req, user, params }) => {
         db.select().from(s.payments).orderBy(desc(s.payments.createdAt)).limit(200),
         db.select({ w: s.withdrawals, name: s.users.name }).from(s.withdrawals).innerJoin(s.users, eq(s.withdrawals.driverId, s.users.id)).orderBy(desc(s.withdrawals.createdAt)).limit(200),
       ]);
-      return { payments, withdrawals: withdrawals.map((r) => ({ ...r.w, driverName: r.name })) };
+      const settlements = await db.select({ x: s.debtSettlements, name: s.users.name }).from(s.debtSettlements).innerJoin(s.users, eq(s.debtSettlements.driverId, s.users.id)).orderBy(desc(s.debtSettlements.createdAt)).limit(200);
+      return { payments, withdrawals: withdrawals.map((r) => ({ ...r.w, driverName: r.name })), settlements: settlements.map((r) => ({ ...r.x, driverName: r.name })) };
     }
     case "emergencies": {
       assertCan(user, "tickets", "read");
@@ -160,6 +163,8 @@ export const GET = route<P>(async ({ req, user, params }) => {
         dispatchWeights: await getSetting(db, "dispatchWeights", DEFAULT_WEIGHTS),
         dispatch: await getSetting(db, "dispatch", { offerTimeoutS: 20, searchTimeoutS: 180 }),
         withdrawal: await getSetting(db, "withdrawal", { minCents: 2000 }),
+        debt: { limitCents: await debtLimitCents(db) },
+        orbiPix: await orbiPix(db),
         schedule: await getSetting(db, "schedule", DEFAULT_SCHEDULE),
         support: await getSetting(db, "support", { whatsapp: "" }),
         payments: await getSetting(db, "payments", DEFAULT_PAYMENT_RULES),
@@ -178,6 +183,7 @@ const userStatusSchema = z.object({ status: z.enum(["active", "suspended"]) });
 const ticketSchema = z.object({ status: z.enum(["open", "in_progress", "closed"]).optional(), response: z.string().trim().max(4000).optional() });
 const emergencyReviewSchema = z.object({ note: z.string().trim().min(3, "Escreva uma nota sobre a análise.").max(2000) });
 const withdrawalSchema = z.object({ status: z.enum(["paid", "rejected"]) });
+const settlementSchema = z.object({ status: z.enum(["confirmed", "rejected"]), reason: z.string().trim().max(300).optional() });
 // Resolver corrida presa: o motivo é obrigatório e vai para a auditoria. Encerrar cobra o valor estimado ou o informado (em centavos).
 const rideResolveSchema = z.object({ reason: z.string().trim().min(5, "Escreva o motivo (pelo menos 5 caracteres).").max(300), amountCents: z.number().int().positive().optional() });
 const staffSchema = z.object({
@@ -189,6 +195,9 @@ const settingsSchema = z.object({
   dispatchWeights: z.object({ eta: positive, idle: positive, netPerKm: positive, earningsBalance: positive, acceptance: positive, cancellation: positive, rating: positive }).optional(),
   dispatch: z.object({ offerTimeoutS: z.number().int().min(5).max(120), searchTimeoutS: z.number().int().min(30).max(900) }).optional(),
   withdrawal: z.object({ minCents: z.number().int().min(0) }).optional(),
+  // Limite da dívida do motorista com a Orbi (centavos) e a chave Pix onde ele paga.
+  debt: z.object({ limitCents: z.number().int().min(100, "O limite mínimo é R$ 1,00.").max(1_000_000) }).optional(),
+  orbiPix: z.object({ key: z.string().trim().max(120), name: z.string().trim().max(80) }).optional(),
   schedule: z.object({ minLeadMin: z.number().int().min(0).max(1440), maxDays: z.number().int().min(1).max(60), searchLeadMin: z.number().int().min(0).max(120), maxPerPassenger: z.number().int().min(1).max(20) }).optional(),
   // Formas de pagamento direto ao motorista que o passageiro pode escolher.
   payments: z.object({ cash: z.boolean(), pix_driver: z.boolean(), card_machine: z.boolean() }).refine((v) => v.cash || v.pix_driver || v.card_machine, "Deixe pelo menos uma forma de pagamento ligada.").optional(),
@@ -211,7 +220,7 @@ const settingsSchema = z.object({
 export const POST = route<P>(async ({ req, user, params }) => {
   const db = await getDb();
   const [what, id, sub] = params.path;
-  if (["drivers", "documents", "vehicles", "users", "tickets", "emergencies", "withdrawals", "rides"].includes(what)) requireUuid(id);
+  if (["drivers", "documents", "vehicles", "users", "tickets", "emergencies", "withdrawals", "settlements", "rides"].includes(what)) requireUuid(id);
   switch (what) {
     case "drivers": {
       assertCan(user, "drivers", "write");
@@ -367,6 +376,18 @@ export const POST = route<P>(async ({ req, user, params }) => {
       await audit(user.id, `withdrawal.${v.status}`, "withdrawal", id, { amountCents: row.amountCents });
       await notify(db, row.driverId, v.status === "paid" ? "Saque pago" : "Saque recusado", `Valor: ${brl(row.amountCents)}`, "/motorista/ganhos");
       return { ok: true };
+    }
+    case "settlements": {
+      assertCan(user, "payments", "write");
+      const v = await body(req, settlementSchema);
+      const { settlement, balanceCents } = await resolveSettlement(id, v, user.id);
+      await audit(user.id, `debt.settlement_${v.status}`, "debt_settlement", id, { driverId: settlement.driverId, amountCents: settlement.amountCents, reason: v.reason });
+      const limit = await debtLimitCents(db);
+      const unblocked = v.status === "confirmed" && debtLevel(balanceCents, limit) !== "blocked";
+      await notify(db, settlement.driverId, v.status === "confirmed" ? "Quitação confirmada" : "Quitação recusada",
+        v.status === "confirmed" ? `Recebemos ${brl(settlement.amountCents)}.${unblocked ? " Você já pode ficar online." : " Ainda há saldo a quitar."}` : `Motivo: ${v.reason}`, "/motorista/ganhos");
+      publish(userChannel(settlement.driverId), "finance");
+      return { ok: true, balanceCents, unblocked };
     }
     case "settings": {
       assertCan(user, "settings", "write");

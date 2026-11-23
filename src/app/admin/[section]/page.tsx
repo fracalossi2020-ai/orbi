@@ -267,13 +267,25 @@ function Rides() {
 
 function Payments() {
   const role = useRole();
-  const { data, loading, reload } = useLive<{ payments: Row[]; withdrawals: Row[] }>("/api/admin/payments");
+  const { data, loading, reload } = useLive<{ payments: Row[]; withdrawals: Row[]; settlements: Row[] }>("/api/admin/payments");
+  const [reject, setReject] = useState<{ id: string; reason: string } | null>(null);
   const { error, busy, run } = useAction();
   if (loading && !data) return <Spinner />;
+  const settle = (id: string, status: "confirmed" | "rejected", reason?: string) => run(async () => { await api(`/api/admin/settlements/${id}`, { body: { status, reason } }); setReject(null); reload(); });
   const act = (id: string, status: string) => run(async () => { await api(`/api/admin/withdrawals/${id}`, { body: { status } }); reload(); });
   return <><PageTitle sub="Marque como pago só depois de transferir: o sistema ainda não movimenta dinheiro sozinho.">Pagamentos e saques</PageTitle>
     <ErrorNote>{error}</ErrorNote>
-    <h2 className="display mb-3 text-2xl">Saques</h2>
+    <h2 className="display mb-3 text-2xl">Quitações de dívida</h2>
+    <p className="mb-3 text-sm text-muted">Confirme só depois de ver o dinheiro na conta da Orbi. Confirmar lança o crédito no saldo do motorista.</p>
+    {!data?.settlements?.length ? <Empty icon="wallet" title="Nenhuma quitação informada" /> : <DataTable rows={data.settlements} columns={[
+      { key: "createdAt", label: "Pedido", render: (r) => dateTime(r.createdAt) }, { key: "driverName", label: "Motorista" }, { key: "amountCents", label: "Valor", kind: "money" }, { key: "note", label: "Comprovante" },
+      { key: "status", label: "Situação", render: (r) => <Badge tone={r.status === "confirmed" ? "ok" : r.status === "rejected" ? "danger" : "warn"}>{({ pending: "Pendente", confirmed: "Confirmada", rejected: "Recusada" } as Record<string, string>)[r.status]}</Badge> },
+    ]} actions={can(role, "payments", "write") ? (r) => r.status !== "pending" ? null : reject?.id === r.id ? (
+      <div className="flex gap-1"><input className="input" aria-label="Motivo da recusa" placeholder="Motivo (obrigatório)" value={reject.reason} onChange={(e) => setReject({ id: r.id, reason: e.target.value })} /><button type="button" className="btn btn-ghost btn-sm" disabled={busy || reject.reason.trim().length < 3} onClick={() => settle(r.id, "rejected", reject.reason)}>Recusar</button></div>
+    ) : (
+      <div className="flex gap-1"><button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => settle(r.id, "confirmed")}>Confirmar</button><button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setReject({ id: r.id, reason: "" })}>Recusar</button></div>
+    ) : undefined} />}
+    <h2 className="display mt-8 mb-3 text-2xl">Saques</h2>
     {!data?.withdrawals.length ? <Empty icon="wallet" title="Nenhum saque solicitado" /> : <DataTable rows={data.withdrawals} columns={[
       { key: "createdAt", label: "Pedido", render: (r) => dateTime(r.createdAt) }, { key: "driverName", label: "Motorista" }, { key: "amountCents", label: "Valor", kind: "money" }, { key: "pixKey", label: "Chave Pix" },
       { key: "status", label: "Situação", render: (r) => <Badge tone={r.status === "paid" ? "ok" : r.status === "rejected" ? "danger" : "warn"}>{({ requested: "Solicitado", paid: "Pago", rejected: "Recusado" } as Record<string, string>)[r.status]}</Badge> },
@@ -397,7 +409,7 @@ function Audit() {
 function Settings() {
   const role = useRole();
   const write = can(role, "settings", "write");
-  const { data, reload } = useLive<{ dispatchWeights: DispatchWeights; dispatch: { offerTimeoutS: number; searchTimeoutS: number }; withdrawal: { minCents: number }; schedule: ScheduleRules; support: { whatsapp: string }; payments: { cash: boolean; pix_driver: boolean; card_machine: boolean }; driverRules: DriverRules }>("/api/admin/settings", { live: false });
+  const { data, reload } = useLive<{ dispatchWeights: DispatchWeights; dispatch: { offerTimeoutS: number; searchTimeoutS: number }; withdrawal: { minCents: number }; debt: { limitCents: number }; orbiPix: { key: string; name: string }; schedule: ScheduleRules; support: { whatsapp: string }; payments: { cash: boolean; pix_driver: boolean; card_machine: boolean }; driverRules: DriverRules }>("/api/admin/settings", { live: false });
   const [draft, setDraft] = useState<NonNullable<typeof data> | null>(null);
   const { busy, error, run } = useAction();
   const [saved, setSaved] = useState(false);
@@ -422,6 +434,15 @@ function Settings() {
       <Field label="Tempo da oferta (s)"><input className="input" inputMode="numeric" disabled={!write} value={v.dispatch.offerTimeoutS} onChange={(e) => setDraft({ ...v, dispatch: { ...v.dispatch, offerTimeoutS: Number(e.target.value) } })} /></Field>
       <Field label="Tempo máximo de busca (s)"><input className="input" inputMode="numeric" disabled={!write} value={v.dispatch.searchTimeoutS} onChange={(e) => setDraft({ ...v, dispatch: { ...v.dispatch, searchTimeoutS: Number(e.target.value) } })} /></Field>
       <Field label="Saque mínimo (centavos)"><input className="input" inputMode="numeric" disabled={!write} value={v.withdrawal.minCents} onChange={(e) => setDraft({ ...v, withdrawal: { minCents: Number(e.target.value) } })} /></Field>
+    </section>
+    <section className="card mt-4 p-5">
+      <h2 className="display mb-1 text-xl">Dívida do motorista com a Orbi</h2>
+      <p className="mb-4 text-sm text-muted">Corridas em dinheiro e Pix direto viram saldo negativo. No limite, o motorista não fica online nem recebe ofertas até quitar; a partir de 70% ele recebe um aviso. A quitação é manual: o motorista paga nesta chave Pix e a equipe confirma em Pagamentos.</p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Field label="Limite da dívida (centavos)"><input className="input" inputMode="numeric" data-testid="debt-limit" disabled={!write} value={v.debt.limitCents} onChange={(e) => setDraft({ ...v, debt: { limitCents: Number(e.target.value) } })} /></Field>
+        <Field label="Chave Pix da Orbi"><input className="input" data-testid="orbi-pix-key" disabled={!write} value={v.orbiPix.key} onChange={(e) => setDraft({ ...v, orbiPix: { ...v.orbiPix, key: e.target.value } })} /></Field>
+        <Field label="Nome do recebedor"><input className="input" disabled={!write} value={v.orbiPix.name} onChange={(e) => setDraft({ ...v, orbiPix: { ...v.orbiPix, name: e.target.value } })} /></Field>
+      </div>
     </section>
     <section className="card mt-4 p-5">
       <h2 className="display mb-1 text-xl">Corridas agendadas</h2>

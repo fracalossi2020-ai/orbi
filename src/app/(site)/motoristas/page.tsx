@@ -11,7 +11,7 @@ const BENEFITS: Feature[] = [
   ["receipt", "Você vê antes de aceitar", "Origem, destino, valor bruto, comissão e líquido em cada oferta. Se não compensar, você recusa."],
   ["scale", "Distribuição equilibrada", "A corrida não vai só para o carro mais próximo: tempo parado e ganhos do dia também contam."],
   ["wallet", "Extrato de verdade", "Cada corrida no extrato, com relatórios por dia, semana e mês, e pedido de saque."],
-  ["gift", "Clube Orbi", "Parceiros locais com condições especiais, e “Minha Economia” somando quanto você poupou."],
+  ["gift", "Clube Orbi", "Grátis para motoristas aprovados: oficinas parceiras com desconto, e “Minha Economia” somando quanto você poupou."],
   ["help", "Atendimento prioritário", "Chamado de motorista entra na frente da fila."],
   ["shield", "Sua segurança também", "Passageiro identificado, avaliação nos dois sentidos e botão de emergência que liga para o 190 com a placa e o local na tela. A Orbi recebe o alerta, mas não é um plantão 24 horas."],
 ];

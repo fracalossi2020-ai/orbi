@@ -13,7 +13,9 @@ import { startOfPeriodSp } from "@/backend/sql-time";
 import { normalizePixKey, PIX_KEY_TYPES, pixKeyMatches, type PixKeyType } from "@/shared/pix";
 import { checkRateLimit } from "@/backend/auth";
 import { reauthFields, requireReauth } from "@/backend/reauth";
-import { requestWithdrawal, subscribePlan } from "@/backend/driver-finance";
+import { debtLevel, DEBT_BLOCK_MESSAGE, debtCents, DEBT_WARN_RATIO } from "@/shared/debt";
+import { debtLimitCents, orbiPix } from "@/backend/debt";
+import { requestSettlement, requestWithdrawal, subscribePlan } from "@/backend/driver-finance";
 import { sniffFile } from "@/backend/security";
 import { stripImageMetadata, uploadsDir } from "@/backend/uploads";
 import { withDefaultRules, DEFAULT_DRIVER_RULES, DOC_KINDS, DRIVER_TERMS_VERSION, driverProblems, vehicleProblems, type DriverRules } from "@/shared/driver-rules";
@@ -87,6 +89,10 @@ export const GET = route<P>(async ({ req, user, params }) => {
     const trunc = period === "month" ? "month" : period === "week" ? "week" : "day";
     // O dia, a semana e o mês de ganhos seguem o horário de Brasília.
     const since = startOfPeriodSp(trunc);
+    const bal = await balance(user.id);
+    const limit = await debtLimitCents(db);
+    const [pendingSettlement] = await db.select().from(s.debtSettlements).where(and(eq(s.debtSettlements.driverId, user.id), eq(s.debtSettlements.status, "pending")));
+    const [lastSettlement] = await db.select().from(s.debtSettlements).where(and(eq(s.debtSettlements.driverId, user.id), eq(s.debtSettlements.status, "rejected"))).orderBy(desc(s.debtSettlements.reviewedAt)).limit(1);
     const [rides, entries, withdrawals, min] = await Promise.all([
       db.select().from(s.rides).where(and(eq(s.rides.driverId, user.id), eq(s.rides.status, "completed"), gte(s.rides.endedAt, since))).orderBy(desc(s.rides.endedAt)),
       db.select().from(s.ledger).where(eq(s.ledger.driverId, user.id)).orderBy(desc(s.ledger.createdAt)).limit(100),
@@ -94,7 +100,8 @@ export const GET = route<P>(async ({ req, user, params }) => {
       getSetting(db, "withdrawal", { minCents: 2000 }),
     ]);
     return {
-      period, balanceCents: await balance(user.id), minWithdrawalCents: min.minCents, entries, withdrawals,
+      period, balanceCents: bal, minWithdrawalCents: min.minCents, entries, withdrawals,
+      debt: { cents: debtCents(bal), limitCents: limit, level: debtLevel(bal, limit), warnRatio: DEBT_WARN_RATIO, pix: await orbiPix(db), pending: pendingSettlement ?? null, last: lastSettlement ?? null },
       summary: {
         rides: rides.length,
         grossCents: rides.reduce((a, r) => a + r.grossCents, 0),
@@ -179,6 +186,7 @@ const paymentPrefsSchema = z.object({
 // A chave do saque é sempre a do perfil: se o pedido trouxer uma, ela só é conferida (nunca usada).
 const withdrawalSchema = z.object({ amountCents: z.number().int().positive(), pixKey: z.string().trim().max(120).optional(), ...reauthFields });
 const savingSchema = z.object({ partnerId: z.string().uuid(), originalCents: z.number().int().positive("Informe o preço normal."), paidCents: z.number().int().min(0) }).refine((v) => v.paidCents <= v.originalCents, "O valor pago deve ser menor que o preço normal.");
+const settlementSchema = z.object({ amountCents: z.number().int().positive().max(100_000_00), note: z.string().trim().max(200).default("") });
 const planSchema = z.object({ planId: z.string().uuid().nullable() });
 
 export const POST = route<P>(async ({ req, user, params }) => {
@@ -283,6 +291,8 @@ export const POST = route<P>(async ({ req, user, params }) => {
       return { online: false };
     }
     if (driver.status !== "approved") throw new ApiError(409, "Seu cadastro ainda não foi aprovado.");
+    // Dívida com a Orbi no limite: não volta a ficar online até quitar.
+    if (debtLevel(await balance(user.id), await debtLimitCents(db)) === "blocked") throw new ApiError(409, DEBT_BLOCK_MESSAGE);
     // CNH vencida não roda: a regularidade vale todos os dias, não só no cadastro.
     if (driver.cnhExpiresAt && new Date(`${driver.cnhExpiresAt}T23:59:59`) < new Date()) throw new ApiError(409, "Sua CNH venceu. Envie a CNH renovada para voltar a rodar.");
     if (v.lat === undefined || v.lng === undefined) throw new ApiError(400, "Precisamos da sua localização para ficar online.");
@@ -359,6 +369,13 @@ export const POST = route<P>(async ({ req, user, params }) => {
     const [partner] = await db.select().from(s.partners).where(and(eq(s.partners.id, v.partnerId), eq(s.partners.active, true)));
     if (!partner) throw new ApiError(404, "Parceiro não encontrado.");
     return (await db.insert(s.partnerSavings).values({ driverId: user.id, ...v }).returning())[0];
+  }
+  if (what === "settlements") {
+    const v = await body(req, settlementSchema);
+    const row = await requestSettlement(user.id, v);
+    await audit(user.id, "debt.settlement_request", "debt_settlement", row.id, { amountCents: v.amountCents });
+    publish(STAFF_CHANNEL, "finance");
+    return row;
   }
   if (what === "plan") {
     const v = await body(req, planSchema);

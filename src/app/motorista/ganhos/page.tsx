@@ -8,6 +8,7 @@ import { useReauth } from "@/frontend/components/app/Reauth";
 
 type Finance = {
   balanceCents: number; minWithdrawalCents: number;
+  debt: { cents: number; limitCents: number; level: "ok" | "warn" | "blocked"; pix: { key: string; name: string }; pending: { amountCents: number; createdAt: string } | null; last: { rejectReason: string | null } | null };
   summary: { rides: number; grossCents: number; commissionCents: number; netCents: number; distanceM: number };
   entries: { id: string; description: string; amountCents: number; createdAt: string; type: string }[];
   withdrawals: { id: string; amountCents: number; status: string; createdAt: string; pixKey: string }[];
@@ -22,12 +23,48 @@ export default function Ganhos() {
   const reauth = useReauth();
   const { data: me } = useLive<{ driver: { pixKey: string | null } | null }>("/api/driver/state", { live: false });
   const { busy, error, run } = useAction();
+  const [paid, setPaid] = useState({ open: false, amount: "", note: "" });
+  const [copied, setCopied] = useState(false);
   if (loading && !data) return <Spinner />;
   if (!data) return null;
   const s = data.summary;
   return (
     <>
       <PageTitle sub="O que entrou, o que a Orbi reteve e o que ficou com você.">Seus ganhos</PageTitle>
+      {data.debt.cents > 0 && (
+        <section className={`card mb-4 p-5 ${data.debt.level === "blocked" ? "border-2 border-danger" : ""}`} data-testid="debt-card">
+          <h2 className="display text-xl">Você deve <span className="num text-danger" data-testid="debt-amount">{brl(data.debt.cents)}</span> à Orbi</h2>
+          <p className="mt-1 text-sm text-muted">É a parte da Orbi nas corridas pagas em dinheiro ou direto a você. <strong>Quite toda segunda-feira</strong>, pelo Pix abaixo.</p>
+          {data.debt.level === "blocked" && <div className="mt-3"><Note tone="warn">Você chegou ao limite de {brl(data.debt.limitCents)}. Quite o saldo com a Orbi para voltar a dirigir. Corrida em andamento pode ser terminada.</Note></div>}
+          {data.debt.level === "warn" && <div className="mt-3"><Note tone="warn">Atenção: perto do limite de {brl(data.debt.limitCents)}. Passando dele, você não fica online até quitar.</Note></div>}
+          {data.debt.pix.key ? (
+            <div className="mt-3 rounded-2xl bg-surface-2 p-3 text-sm">
+              <p className="text-muted">Chave Pix da Orbi{data.debt.pix.name ? ` (${data.debt.pix.name})` : ""}</p>
+              <div className="mt-1 flex items-center justify-between gap-2"><span className="num break-all font-semibold" data-testid="orbi-pix">{data.debt.pix.key}</span>
+                <button type="button" className="btn btn-soft btn-sm" onClick={() => { navigator.clipboard?.writeText(data.debt.pix.key).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }).catch(() => {}); }}>{copied ? "Copiado" : "Copiar"}</button></div>
+            </div>
+          ) : <p className="mt-3 text-sm text-muted">A chave Pix da Orbi ainda não foi cadastrada. Fale com o suporte para quitar.</p>}
+          {data.debt.pending ? (
+            <p className="mt-3 text-sm font-semibold" data-testid="debt-pending">Pagamento de {brl(data.debt.pending.amountCents)} informado em {dateTime(data.debt.pending.createdAt)}. A equipe vai conferir.</p>
+          ) : !paid.open ? (
+            <>
+              {data.debt.last?.rejectReason && <p className="mt-3 text-sm text-danger">Último pagamento recusado: {data.debt.last.rejectReason}</p>}
+              <button type="button" className="btn btn-primary mt-3 w-full" onClick={() => setPaid({ open: true, amount: (data.debt.cents / 100).toFixed(2).replace(".", ","), note: "" })}>Já paguei</button>
+            </>
+          ) : (
+            <form className="mt-3 grid gap-3" onSubmit={(e) => { e.preventDefault(); run(async () => {
+              await api("/api/driver/settlements", { body: { amountCents: Math.round(Number(paid.amount.replace(",", ".")) * 100), note: paid.note } });
+              setPaid({ open: false, amount: "", note: "" }); reload();
+            }); }}>
+              <Field label="Valor que você pagou"><input className="input" inputMode="decimal" required value={paid.amount} onChange={(e) => setPaid({ ...paid, amount: e.target.value })} /></Field>
+              <Field label="Código do comprovante (opcional)"><input className="input" maxLength={200} value={paid.note} onChange={(e) => setPaid({ ...paid, note: e.target.value })} /></Field>
+              <div className="flex gap-2"><button className="btn btn-primary flex-1" disabled={busy}>Enviar para a equipe</button><button type="button" className="btn btn-ghost" onClick={() => setPaid({ ...paid, open: false })}>Cancelar</button></div>
+            </form>
+          )}
+          <div className="mt-2"><ErrorNote>{error}</ErrorNote></div>
+        </section>
+      )}
+
       <div role="tablist" aria-label="Período" className="mb-4 grid grid-cols-3 gap-1 rounded-2xl bg-surface-2 p-1">
         {PERIODS.map(([v, l]) => <button key={v} type="button" role="tab" aria-selected={period === v} onClick={() => setPeriod(v)} className={`rounded-xl py-2 font-semibold transition-colors ${period === v ? "bg-surface shadow-sm" : "text-muted"}`}>{l}</button>)}
       </div>

@@ -323,7 +323,7 @@ export const ledger = pgTable("ledger", {
   id: id(),
   driverId: uuid("driver_id").notNull().references(() => users.id),
   rideId: uuid("ride_id").references(() => rides.id),
-  type: text("type").notNull(), // ride_net | cash_due | withdrawal | withdrawal_reversal | bonus | adjustment | plan
+  type: text("type").notNull(), // ride_net | cash_due | withdrawal | withdrawal_reversal | bonus | adjustment | plan | debt_settlement
   amountCents: integer("amount_cents").notNull(),
   description: text("description").notNull(),
   createdAt: createdAt(),
@@ -482,3 +482,20 @@ export const deletedCpfBlocks = pgTable("deleted_cpf_blocks", {
   blockedUntil: timestamp("blocked_until", { withTimezone: true }).notNull(),
   createdAt: createdAt(),
 });
+
+/** Pedido de quitação da dívida do motorista com a Orbi (corridas em dinheiro / Pix direto). Só vira crédito no saldo quando a equipe confirma. */
+export const debtSettlements = pgTable("debt_settlements", {
+  id: id(),
+  driverId: uuid("driver_id").notNull().references(() => users.id),
+  amountCents: integer("amount_cents").notNull(),
+  note: text("note").notNull().default(""),
+  status: text("status").notNull().default("pending"), // pending | confirmed | rejected
+  rejectReason: text("reject_reason"),
+  reviewedBy: uuid("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [
+  index("debt_settlements_driver").on(t.driverId),
+  // No máximo um pedido pendente por motorista.
+  uniqueIndex("debt_settlements_one_pending").on(t.driverId).where(sql`${t.status} = 'pending'`),
+]);

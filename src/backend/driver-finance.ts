@@ -1,6 +1,8 @@
 import { and, eq, sql } from "drizzle-orm";
 import { getDb, schema as s } from "@/database";
 import { ApiError } from "./api";
+import { planSubscribeError } from "@/shared/plans";
+import { settlementProblem } from "@/shared/debt";
 
 type Db = Awaited<ReturnType<typeof getDb>>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -38,8 +40,9 @@ export async function subscribePlan(driverId: string, planId: string) {
   const db = await getDb();
   return db.transaction(async (tx) => {
     await lockDriver(tx, driverId);
-    const [plan] = await tx.select().from(s.plans).where(and(eq(s.plans.id, planId), eq(s.plans.active, true)));
-    if (!plan) throw new ApiError(404, "Plano não encontrado.");
+    const [plan] = await tx.select().from(s.plans).where(eq(s.plans.id, planId));
+    const erro = planSubscribeError(plan);
+    if (erro) throw new ApiError(erro.status, erro.message);
     if ((await balanceIn(tx, driverId)) < plan.priceCents) throw new ApiError(409, "Saldo insuficiente para assinar este plano.");
     await tx.insert(s.ledger).values({ driverId, type: "plan", amountCents: -plan.priceCents, description: `Assinatura: ${plan.name}` });
     // Renovar o mesmo plano ainda ativo soma os dias; trocar de plano começa o novo hoje.
@@ -70,5 +73,40 @@ export async function settleWithdrawal(id: string, status: "paid" | "rejected", 
       await tx.insert(s.ledger).values({ driverId: row.driverId, type: "withdrawal_reversal", amountCents: row.amountCents, description: "Saque recusado: valor devolvido ao saldo" });
     }
     return row;
+  });
+}
+
+/** Motorista informa que pagou a dívida: cria um pedido pendente (no máximo 1). Não mexe no saldo. */
+export async function requestSettlement(driverId: string, v: { amountCents: number; note: string }) {
+  const db = await getDb();
+  return db.transaction(async (tx) => {
+    await lockDriver(tx, driverId);
+    const problem = settlementProblem(v.amountCents, await balanceIn(tx, driverId));
+    if (problem) throw new ApiError(409, problem);
+    const [open] = await tx.select({ id: s.debtSettlements.id }).from(s.debtSettlements).where(and(eq(s.debtSettlements.driverId, driverId), eq(s.debtSettlements.status, "pending")));
+    if (open) throw new ApiError(409, "Você já tem um pagamento em análise. Aguarde a equipe confirmar.");
+    const [row] = await tx.insert(s.debtSettlements).values({ driverId, amountCents: v.amountCents, note: v.note }).returning();
+    return row;
+  });
+}
+
+/**
+ * Equipe confirma ou recusa. Confirmar lança o crédito no ledger (única forma de a dívida baixar) na mesma transação,
+ * com o motorista travado; recusar exige motivo. Devolve o pedido e o saldo depois do lançamento.
+ */
+export async function resolveSettlement(id: string, v: { status: "confirmed" | "rejected"; reason?: string }, reviewerId: string) {
+  const db = await getDb();
+  return db.transaction(async (tx) => {
+    const [cur] = await tx.select().from(s.debtSettlements).where(eq(s.debtSettlements.id, id));
+    if (!cur) throw new ApiError(404, "Pedido de quitação não encontrado.");
+    await lockDriver(tx, cur.driverId);
+    if (v.status === "rejected" && (v.reason ?? "").trim().length < 3) throw new ApiError(400, "Escreva o motivo da recusa.");
+    const [row] = await tx.update(s.debtSettlements).set({ status: v.status, rejectReason: v.status === "rejected" ? v.reason!.trim() : null, reviewedBy: reviewerId, reviewedAt: new Date() })
+      .where(and(eq(s.debtSettlements.id, id), eq(s.debtSettlements.status, "pending"))).returning();
+    if (!row) throw new ApiError(409, "Este pedido já foi tratado.");
+    if (v.status === "confirmed") {
+      await tx.insert(s.ledger).values({ driverId: row.driverId, type: "debt_settlement", amountCents: row.amountCents, description: "Quitação com a Orbi confirmada" });
+    }
+    return { settlement: row, balanceCents: await balanceIn(tx, row.driverId) };
   });
 }
