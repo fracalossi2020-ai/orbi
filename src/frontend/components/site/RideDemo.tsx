@@ -36,7 +36,11 @@ export function RideDemo() {
   const [from, setFrom] = useState("Centro, Ipatinga");
   const [to, setTo] = useState("Centro, Timóteo");
   const [category, setCategory] = useState("essencial");
-  const [shown, setShown] = useState<{ a: { x: number; y: number; name: string }; b: { x: number; y: number; name: string } } | null>(null);
+  // O mapa já abre com a rota de exemplo desenhada: nunca fica vazio. Os preços só aparecem depois do clique.
+  const [shown, setShown] = useState<{ a: { x: number; y: number; name: string }; b: { x: number; y: number; name: string } }>(
+    () => ({ a: resolve("Centro, Ipatinga", 7), b: resolve("Centro, Timóteo", 13) }),
+  );
+  const [asked, setAsked] = useState(false);
   const reduce = useReducedMotion();
   const list = useId();
 
@@ -46,14 +50,15 @@ export function RideDemo() {
     let b = resolve(to || "Centro, Timóteo", 13);
     if (a.x === b.x && a.y === b.y) b = { ...PLACES[(PLACES.findIndex((p) => p.x === a.x) + 3) % PLACES.length], name: b.name };
     setShown({ a, b });
+    setAsked(true);
   };
 
   const trip = useMemo(() => {
-    if (!shown) return null;
+    if (!asked) return null;
     const px = Math.hypot(shown.a.x - shown.b.x, shown.a.y - shown.b.y);
     const kmEst = Math.max(2, px / 28);
     return { kmEst, min: Math.round(kmEst * 2.2 + 3) };
-  }, [shown]);
+  }, [shown, asked]);
   const fictitious = (k: number) => Math.round((400 + (trip?.kmEst ?? 0) * 190 + (trip?.min ?? 0) * 30) * k / 50) * 50;
 
   return (
@@ -94,31 +99,50 @@ export function RideDemo() {
           </AnimatePresence>
         </div>
 
-        <div className="card relative min-h-[380px] overflow-hidden bg-surface lg:min-h-[640px]">
+        <div className="card relative min-h-[380px] overflow-hidden bg-[#EEF3EC] lg:min-h-[640px]">
           <span className="absolute top-4 left-4 z-10 rounded-full bg-deep px-3 py-1 text-xs font-semibold text-on-deep">Mapa esquemático · demonstração</span>
-          <svg viewBox="0 0 800 560" className="absolute inset-0 size-full" preserveAspectRatio="xMidYMid slice" role="img" aria-label={shown ? `Rota ilustrativa de ${shown.a.name} até ${shown.b.name}` : "Mapa esquemático do Vale do Aço"}>
-            <rect width="800" height="560" fill="var(--surface)" />
-            <path d="M-20 490 C 120 470, 180 320, 300 300 S 520 260, 560 150 S 720 20, 830 10" fill="none" stroke="var(--surface-2)" strokeWidth="34" strokeLinecap="round" />
-            {[80, 160, 240, 320, 400, 480].map((y) => <path key={y} d={`M0 ${y} H800`} stroke="var(--line)" strokeOpacity=".45" />)}
-            {[100, 200, 300, 400, 500, 600, 700].map((x) => <path key={x} d={`M${x} 0 V560`} stroke="var(--line)" strokeOpacity=".45" />)}
-            <path d="M120 540 L300 370 L420 290 L620 180 L780 40" fill="none" stroke="var(--line)" strokeWidth="7" strokeLinecap="round" />
-            {[["Ipatinga", 610, 80], ["Coronel Fabriciano", 330, 215], ["Timóteo", 190, 365]].map(([t, x, y]) => (
-              <text key={String(t)} x={Number(x)} y={Number(y)} textAnchor="middle" fill="var(--muted)" fontSize="15" fontWeight="600">{t}</text>
+          {/* Cores fixas de mapa (terra, verde, rio, estrada), como nos apps de mapa; a rota e os pontos usam o azul da Orbi. */}
+          <svg viewBox="0 0 800 560" className="absolute inset-0 size-full" preserveAspectRatio="xMidYMid slice" role="img" aria-label={`Rota ilustrativa de ${shown.a.name} até ${shown.b.name}`}>
+            <rect width="800" height="560" fill="#EEF3EC" />
+            {/* Áreas verdes (morros e o Parque do Rio Doce) */}
+            <path d="M560 380 C 640 340, 760 360, 820 420 L 820 580 L 470 580 C 470 500, 500 420, 560 380 Z" fill="#D3EACB" />
+            <path d="M-20 60 C 60 20, 170 40, 210 110 C 240 170, 150 210, 70 200 C 20 195, -20 170, -20 140 Z" fill="#D3EACB" />
+            <ellipse cx="455" cy="430" rx="70" ry="38" fill="#DCEFD5" />
+            {/* Manchas urbanas */}
+            <ellipse cx="615" cy="160" rx="120" ry="78" fill="#FFFFFF" opacity=".85" />
+            <ellipse cx="370" cy="285" rx="105" ry="62" fill="#FFFFFF" opacity=".85" />
+            <ellipse cx="240" cy="425" rx="105" ry="58" fill="#FFFFFF" opacity=".85" />
+            {/* Rio Piracicaba */}
+            <path d="M-20 490 C 120 470, 180 320, 300 300 S 520 260, 560 150 S 720 20, 830 10" fill="none" stroke="#9DD3FB" strokeWidth="26" strokeLinecap="round" />
+            <path d="M-20 490 C 120 470, 180 320, 300 300 S 520 260, 560 150 S 720 20, 830 10" fill="none" stroke="#7CC2F6" strokeWidth="10" strokeLinecap="round" opacity=".55" />
+            {/* Ruas secundárias */}
+            {["M520 120 C 590 140, 650 110, 720 150", "M560 220 C 600 190, 650 200, 700 230", "M300 250 C 350 270, 400 260, 450 300", "M170 420 C 220 400, 280 430, 330 470"].map((d) => (
+              <g key={d}><path d={d} fill="none" stroke="#D5DDE6" strokeWidth="7" strokeLinecap="round" /><path d={d} fill="none" stroke="#FFFFFF" strokeWidth="4" strokeLinecap="round" /></g>
             ))}
-            {PLACES.map((p) => <circle key={p.name} cx={p.x} cy={p.y} r="4" fill="var(--muted)" opacity=".5" />)}
-            {shown && (
-              <g key={`${shown.a.x}-${shown.b.x}-${shown.a.y}-${shown.b.y}`}>
-                <motion.path d={pathBetween(shown.a, shown.b)} fill="none" stroke="var(--primary)" strokeWidth="6" strokeLinecap="round"
-                  initial={reduce ? false : { pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 1.3, ease: "easeInOut" }} />
-                <circle cx={shown.a.x} cy={shown.a.y} r="9" fill="var(--accent)" stroke="var(--surface)" strokeWidth="3" />
-                <circle cx={shown.b.x} cy={shown.b.y} r="11" fill="var(--primary)" stroke="var(--surface)" strokeWidth="3" />
-                {!reduce && (
-                  <circle r="7" fill="var(--surface)" stroke="var(--primary)" strokeWidth="3">
-                    <animateMotion dur="3.6s" repeatCount="indefinite" path={pathBetween(shown.a, shown.b)} />
-                  </circle>
-                )}
+            {/* BR-381: estrada principal com contorno */}
+            <path d="M120 540 L300 370 L420 290 L620 180 L780 40" fill="none" stroke="#C3CEDB" strokeWidth="14" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M120 540 L300 370 L420 290 L620 180 L780 40" fill="none" stroke="#FFFFFF" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round" />
+            <g transform="translate(505 236)"><rect x="-22" y="-11" width="44" height="22" rx="6" fill="#0356C5" /><text y="5" textAnchor="middle" fill="#FFFFFF" fontSize="12" fontWeight="800">381</text></g>
+            {[["Ipatinga", 610, 80], ["Coronel Fabriciano", 330, 215], ["Timóteo", 190, 340]].map(([t, x, y]) => (
+              <text key={String(t)} x={Number(x)} y={Number(y)} textAnchor="middle" fill="#02060E" fontSize="17" fontWeight="800"
+                stroke="#FFFFFF" strokeWidth="5" paintOrder="stroke" strokeLinejoin="round">{t}</text>
+            ))}
+            {PLACES.map((p) => <circle key={p.name} cx={p.x} cy={p.y} r="5" fill="#FFFFFF" stroke="var(--primary)" strokeWidth="2.5" />)}
+            <g key={`${shown.a.x}-${shown.b.x}-${shown.a.y}-${shown.b.y}`}>
+              <path d={pathBetween(shown.a, shown.b)} fill="none" stroke="#FFFFFF" strokeWidth="13" strokeLinecap="round" />
+              <motion.path d={pathBetween(shown.a, shown.b)} fill="none" stroke="var(--primary)" strokeWidth="7" strokeLinecap="round"
+                initial={reduce ? false : { pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 1.3, ease: "easeInOut" }} />
+              <circle cx={shown.a.x} cy={shown.a.y} r="10" fill="#FFFFFF" stroke="var(--primary)" strokeWidth="5" />
+              <g transform={`translate(${shown.b.x} ${shown.b.y})`}>
+                <path d="M0 0 C -3 -8, -14 -14, -14 -26 A 14 14 0 1 1 14 -26 C 14 -14, 3 -8, 0 0 Z" fill="var(--primary)" stroke="#FFFFFF" strokeWidth="3" />
+                <circle cy="-26" r="5" fill="#FFFFFF" />
               </g>
-            )}
+              {!reduce && (
+                <circle r="8" fill="#02060E" stroke="#FFFFFF" strokeWidth="3">
+                  <animateMotion dur="3.6s" repeatCount="indefinite" path={pathBetween(shown.a, shown.b)} />
+                </circle>
+              )}
+            </g>
           </svg>
           {trip && (
             <div className="absolute right-4 bottom-4 rounded-2xl bg-deep px-4 py-3 text-on-deep">

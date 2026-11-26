@@ -321,7 +321,8 @@ html:has(.site-one), html:has(.site-one) body { background: #FFFFFF; }
 .site-one main { padding-top: calc(64px + env(safe-area-inset-top)); }
 .site-one footer.on-deep { margin: 0 8px 8px; border-radius: 28px; overflow: hidden; }
 @media (min-width: 768px) { .site-one footer.on-deep { margin: 0 12px 12px; border-radius: 36px; } }
-.site-one main section.on-deep { margin: 8px; border-radius: 28px; overflow: hidden; }
+/* clip, não hidden: hidden vira caixa de rolagem e o "sticky" de dentro (celular do passo a passo) para de grudar. */
+.site-one main section.on-deep { margin: 8px; border-radius: 28px; overflow: clip; }
 @media (min-width: 768px) { .site-one main section.on-deep { margin: 12px; border-radius: 36px; } }
 /* Abertura em branco: as cores "escuras" do hero passam a ser as do papel. */
 .site-one main section.hero-light {
