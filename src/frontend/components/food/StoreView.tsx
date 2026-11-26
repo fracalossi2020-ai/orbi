@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Badge, Empty, Note } from "@/frontend/components/ui";
 import { Icon } from "@/frontend/components/Icon";
 import { BackLink, BottomBar, FoodArt, Stepper } from "@/frontend/components/food/parts";
+import { FoodWordmark, HeartButton } from "@/frontend/components/food/FoodUi";
 import { useFoodState, useNow } from "@/frontend/lib/food-storage";
 import { categoryLabel, storeById } from "@/shared/food/demo-data";
 import { brasiliaMinutes, isOpenAt, turnLabel } from "@/shared/food/hours";
@@ -106,6 +107,10 @@ export function StoreView({ storeId }: { storeId: string }) {
   const lines = state?.carts[store.id] ?? [];
   const count = itemCount(lines);
 
+  const favStore = !!state?.favStores.includes(store.id);
+  const toggleStore = () => update((s) => ({ ...s, favStores: s.favStores.includes(store.id) ? s.favStores.filter((x) => x !== store.id) : [...s.favStores, store.id] }));
+  const toggleItem = (id: string) => { const k = `${store.id}:${id}`; update((s) => ({ ...s, favItems: s.favItems.includes(k) ? s.favItems.filter((x) => x !== k) : [...s.favItems, k] })); };
+
   const add = (item: FoodItem, sel: Record<string, string[]>, qty: number) => {
     const line = buildLine(item, sel, qty);
     if (!line) return;
@@ -116,8 +121,14 @@ export function StoreView({ storeId }: { storeId: string }) {
 
   return (
     <div className={`space-y-5 ${count ? "pb-24" : ""}`}>
-      <BackLink href="/passageiro/food">← Lojas</BackLink>
-      <FoodArt store={store} className="h-36 rounded-3xl" />
+      <div className="flex items-center justify-between gap-3">
+        <BackLink href="/passageiro/food">← Lojas</BackLink>
+        <FoodWordmark className="text-lg" />
+      </div>
+      <div className="relative">
+        <FoodArt store={store} className="h-36 rounded-3xl" />
+        <HeartButton on={favStore} onToggle={toggleStore} label={store.name} className="absolute top-2 right-2 bg-surface/90" />
+      </div>
       <div>
         <h1 className="display text-2xl">{store.name}</h1>
         <p className="mt-1 text-sm text-muted">{store.blurb}</p>
@@ -137,8 +148,8 @@ export function StoreView({ storeId }: { storeId: string }) {
           <h2 className="mb-2 font-semibold">{title}</h2>
           <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
             {items.map((i) => (
-              <li key={i.id}>
-                <button type="button" onClick={() => setOpen(i)} className="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left active:bg-surface-2">
+              <li key={i.id} className="flex items-center">
+                <button type="button" onClick={() => setOpen(i)} className="flex min-h-16 min-w-0 flex-1 items-center gap-3 py-3 pl-4 text-left active:bg-surface-2">
                   <span className="min-w-0 flex-1">
                     <span className="block font-semibold">{i.name}</span>
                     <span className="mt-0.5 line-clamp-2 block text-sm text-muted">{i.description}</span>
@@ -146,6 +157,7 @@ export function StoreView({ storeId }: { storeId: string }) {
                   </span>
                   <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-tint text-brand"><Icon name="plus" size={18} /></span>
                 </button>
+                <HeartButton on={!!state?.favItems.includes(`${store.id}:${i.id}`)} onToggle={() => toggleItem(i.id)} label={i.name} />
               </li>
             ))}
           </ul>

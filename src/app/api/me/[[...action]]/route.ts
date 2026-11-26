@@ -13,7 +13,12 @@ import { removeUploads } from "@/backend/uploads";
 import { reauthFields, requireReauth } from "@/backend/reauth";
 
 export const GET = publicRoute<{ action?: string[] }>(async ({ user, params }) => {
-  if (!params.action) return { user: user ? publicUser(user) : null };
+  if (!params.action) {
+    if (!user) return { user: null };
+    // Cidade do endereço cadastrado (hoje só motorista tem endereço): o Orbi Food a usa como "cidade de casa". Só leitura.
+    const [d] = await (await getDb()).select({ city: s.drivers.addressCity }).from(s.drivers).where(eq(s.drivers.userId, user.id)).limit(1);
+    return { user: { ...publicUser(user), addressCity: d?.city ?? null } };
+  }
   if (!user) throw new ApiError(401, "Entre na sua conta para continuar.");
   if (params.action[0] === "export") throw new ApiError(405, "Para baixar seus dados, confirme a senha na tela Minha conta.");
   throw new ApiError(404, "Recurso não encontrado.");

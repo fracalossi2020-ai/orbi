@@ -1,4 +1,4 @@
-import type { FoodCategoryId, FoodCityId, FoodItem, FoodStatus, FoodStore, Fulfillment, OptionGroup } from "./types";
+import type { CoverTone, FoodCategoryId, FoodCityId, FoodItem, FoodStatus, FoodStore, Fulfillment, OptionGroup } from "./types";
 
 /**
  * Dados FICTÍCIOS do Orbi Food (demonstração). Arquivo estático, sem banco e sem API de escrita.
@@ -180,6 +180,138 @@ export const FOOD_STORES: FoodStore[] = [
       item("lata", "Bebidas", "Refrigerante lata", 6, "350 ml, gelado."),
     ],
   },
+  // ---- Lojas fictícias extras: cada cidade fica com pelo menos cinco, para a aba nunca ficar vazia.
+  {
+    id: "tropical-acai", name: "Tropical Açaí & Cia", city: "ipatinga", category: "acai", blurb: "Açaí cremoso, copos grandes e muita fruta.",
+    etaMin: 20, etaMax: 35, deliveryFeeCents: c(4.5), minOrderCents: c(15), turns: [{ open: "11:00", close: "23:00" }], tone: 3, today: { orders: 33, ticketCents: c(25) },
+    menu: [
+      item("a300", "Açaí no copo", "Açaí 300 ml", 15, "Monte do seu jeito.", [frutas, compl, cobert, turbine]),
+      item("a500", "Açaí no copo", "Açaí 500 ml", 21, "O mais pedido da casa.", [frutas, compl, cobert, turbine]),
+      item("a700", "Açaí no copo", "Açaí 700 ml", 29, "Para matar a vontade.", [frutas, compl, cobert, turbine]),
+      item("barca", "Para dividir", "Barca de açaí 1 L", 39, "Com quatro complementos à escolha.", [frutas, compl, turbine]),
+      item("shake", "Bebidas", "Milk-shake de açaí 400 ml", 17, "Açaí batido com leite e banana."),
+      item("coco", "Bebidas", "Água de coco 300 ml", 8, "Gelada."),
+    ],
+  },
+  {
+    id: "cantinho-mineiro", name: "Cantinho Mineiro", city: "ipatinga", category: "marmita", blurb: "Comida mineira no capricho: feijão tropeiro, couve e torresmo.",
+    etaMin: 30, etaMax: 45, deliveryFeeCents: c(5), minOrderCents: c(20), turns: [{ open: "10:30", close: "15:00" }, { open: "18:00", close: "21:30" }], tone: 0, today: { orders: 35, ticketCents: c(29) },
+    menu: [
+      item("m", "Marmitex", "Marmitex média", 23, "Arroz, feijão, uma mistura e duas guarnições.", [mistura, salada, sobremesa]),
+      item("g", "Marmitex", "Marmitex grande", 27, "Arroz, feijão, uma mistura e três guarnições.", [mistura, salada, sobremesa]),
+      item("tropeiro", "Pratos", "Feijão tropeiro completo", 28, "Com couve, torresmo, linguiça e ovo."),
+      item("frango-q", "Pratos", "Frango com quiabo", 26, "Domingo todo dia, com angu."),
+      item("suco", "Bebidas", "Suco natural 400 ml", 7, "Laranja, maracujá ou abacaxi."),
+      item("doce", "Sobremesas", "Doce de leite caseiro", 6, "Porção individual."),
+    ],
+  },
+  {
+    id: "pizza-do-vale", name: "Pizza do Vale", city: "fabriciano", category: "pizza", blurb: "Pizza grande, borda recheada e entrega rápida.",
+    etaMin: 35, etaMax: 50, deliveryFeeCents: c(5.5), minOrderCents: c(30), turns: [{ open: "17:00", close: "23:59" }], tone: 1, today: { orders: 28, ticketCents: c(64) },
+    menu: [
+      item("marg", "Pizzas grandes", "Margherita", 54, "Molho, mussarela, tomate e manjericão. 8 fatias.", [massa, borda, extrasPizza]),
+      item("calab", "Pizzas grandes", "Calabresa", 56, "Calabresa, cebola e mussarela. 8 fatias.", [massa, borda, extrasPizza]),
+      item("frango", "Pizzas grandes", "Frango com catupiry", 64, "Frango desfiado e catupiry. 8 fatias.", [massa, borda, extrasPizza]),
+      item("bacon", "Pizzas grandes", "Bacon crocante", 66, "Bacon, milho e mussarela. 8 fatias.", [massa, borda, extrasPizza]),
+      item("refri", "Bebidas", "Refrigerante 2 L", 13, "Gelado.", [refri2l]),
+      item("suco", "Bebidas", "Suco de laranja 500 ml", 9, "Espremido na hora."),
+    ],
+  },
+  {
+    id: "burger-estacao", name: "Burger Estação", city: "fabriciano", category: "lanches", blurb: "Lanches artesanais e batata em dobro.",
+    etaMin: 25, etaMax: 40, deliveryFeeCents: c(4), minOrderCents: c(22), turns: [{ open: "17:30", close: "23:30" }], tone: 2, today: { orders: 30, ticketCents: c(39) },
+    menu: [
+      item("classico", "Hambúrgueres", "Clássico", 25, "Blend 150 g, queijo, alface e tomate.", [ponto, adic]),
+      item("bacon", "Hambúrgueres", "Bacon burger", 31, "Blend 150 g, bacon e cheddar.", [ponto, adic]),
+      item("frango", "Hambúrgueres", "Frango crocante", 27, "Filé empanado e maionese de ervas.", [adic]),
+      item("batata", "Acompanhamentos", "Batata frita média", 15, "Porção crocante.", [molhoBatata]),
+      item("shake", "Bebidas", "Milk-shake 400 ml", 17, "Chocolate, morango ou doce de leite."),
+      item("lata", "Bebidas", "Refrigerante lata", 6.5, "350 ml, gelado."),
+    ],
+  },
+  {
+    id: "pao-de-ouro", name: "Padaria Pão de Ouro", city: "fabriciano", category: "padaria", blurb: "Fornadas o dia inteiro e café coado na hora.",
+    etaMin: 20, etaMax: 35, deliveryFeeCents: c(3), minOrderCents: c(12), turns: [{ open: "06:00", close: "12:00" }, { open: "14:00", close: "20:00" }], tone: 0, today: { orders: 37, ticketCents: c(22) },
+    menu: [
+      item("pao", "Pães", "Pão francês 10 unidades", 7.5, "Saindo do forno."),
+      item("pqueijo", "Pães", "Pão de queijo 12 unidades", 14, "Mineiro, assado na hora."),
+      item("sonho", "Doces", "Sonho de creme", 6.5, "Recheio cremoso."),
+      item("bolo", "Doces", "Bolo de fubá (fatia)", 5.5, "Macio, com erva-doce."),
+      item("misto", "Lanches", "Misto quente", 11, "Presunto e queijo na chapa."),
+      item("combo", "Combos", "Combo café da manhã", 23, "Pão na chapa, pão de queijo e uma bebida.", [bebidaCafe]),
+    ],
+  },
+  {
+    id: "pizzaria-aco-quente", name: "Pizzaria Aço Quente", city: "timoteo", category: "pizza", blurb: "Pizza assada na pedra, massa fina e crocante.",
+    etaMin: 35, etaMax: 55, deliveryFeeCents: c(6), minOrderCents: c(30), turns: [{ open: "17:30", close: "23:59" }], tone: 3, today: { orders: 26, ticketCents: c(66) },
+    menu: [
+      item("marg", "Pizzas grandes", "Margherita", 55, "Molho, mussarela, tomate e manjericão. 8 fatias.", [massa, borda, extrasPizza]),
+      item("calab", "Pizzas grandes", "Calabresa", 57, "Calabresa, cebola e mussarela. 8 fatias.", [massa, borda, extrasPizza]),
+      item("port", "Pizzas grandes", "Portuguesa", 63, "Presunto, ovo, cebola e ervilha. 8 fatias.", [massa, borda, extrasPizza]),
+      item("queijos", "Pizzas grandes", "Quatro queijos", 67, "Mussarela, provolone, parmesão e catupiry. 8 fatias.", [massa, borda, extrasPizza]),
+      item("refri", "Bebidas", "Refrigerante 2 L", 14, "Gelado.", [refri2l]),
+      item("suco", "Bebidas", "Suco de laranja 500 ml", 9, "Espremido na hora."),
+    ],
+  },
+  {
+    id: "lanchonete-da-praca", name: "Lanchonete da Praça", city: "timoteo", category: "lanches", blurb: "O x-tudo da praça, do jeito que você gosta.",
+    etaMin: 20, etaMax: 35, deliveryFeeCents: c(4), minOrderCents: c(18), turns: [{ open: "16:00", close: "23:30" }], tone: 1, today: { orders: 32, ticketCents: c(34) },
+    menu: [
+      item("xburger", "Lanches", "X-burger", 18, "Hambúrguer, queijo, alface e tomate.", [adic]),
+      item("xbacon", "Lanches", "X-bacon", 22, "Hambúrguer, queijo e bacon.", [adic]),
+      item("xtudo", "Lanches", "X-tudo", 28, "Hambúrguer, ovo, bacon, presunto, queijo e salada.", [adic]),
+      item("batata", "Acompanhamentos", "Batata frita média", 14, "Porção crocante.", [molhoBatata]),
+      item("suco", "Bebidas", "Suco natural 400 ml", 7, "Laranja ou maracujá."),
+      item("lata", "Bebidas", "Refrigerante lata", 6, "350 ml, gelado."),
+    ],
+  },
+  {
+    id: "aco-e-sabor", name: "Marmitaria Aço & Sabor", city: "timoteo", category: "marmita", blurb: "Marmita reforçada para a hora do almoço.",
+    etaMin: 25, etaMax: 40, deliveryFeeCents: c(4), minOrderCents: c(18), turns: [{ open: "10:30", close: "14:30" }], tone: 2, today: { orders: 34, ticketCents: c(26) },
+    menu: [
+      item("p", "Marmitex", "Marmitex pequena", 17, "Arroz, feijão, uma mistura e guarnição.", [mistura, salada, sobremesa]),
+      item("m", "Marmitex", "Marmitex média", 21, "Arroz, feijão, uma mistura e duas guarnições.", [mistura, salada, sobremesa]),
+      item("g", "Marmitex", "Marmitex grande", 24, "Arroz, feijão, uma mistura e três guarnições.", [mistura, salada, sobremesa]),
+      item("exec", "Pratos", "Executivo de frango", 23, "Filé de frango grelhado, arroz, feijão e legumes."),
+      item("suco", "Bebidas", "Suco natural 400 ml", 7, "Laranja, maracujá ou abacaxi."),
+      item("pudim", "Sobremesas", "Pudim de leite", 6, "Fatia individual."),
+    ],
+  },
+];
+
+/** Nota fictícia (0 a 5) de cada loja, só para ordenar e enfeitar os cartões da demo. */
+const RATINGS: Record<string, number> = {
+  "forno-da-serra": 4.8, "brasa-e-pao": 4.7, "sabor-de-casa": 4.6, "acai-pe-vermelho": 4.9, "sushi-vale-sakura": 4.8, "trigo-dourado": 4.5, "espetinho-do-ze": 4.7,
+  "tropical-acai": 4.6, "cantinho-mineiro": 4.8, "pizza-do-vale": 4.4, "burger-estacao": 4.6, "pao-de-ouro": 4.7, "pizzaria-aco-quente": 4.5, "lanchonete-da-praca": 4.3, "aco-e-sabor": 4.6,
+};
+export const ratingOf = (s: Pick<FoodStore, "id">) => RATINGS[s.id] ?? 4.5;
+
+/** Selo de desconto fictício de algumas lojas (destaques). */
+const PROMOS: Record<string, string> = {
+  "forno-da-serra": "20% OFF", "brasa-e-pao": "Frete grátis", "acai-pe-vermelho": "15% OFF", "sushi-vale-sakura": "10% OFF", "cantinho-mineiro": "Sobremesa grátis",
+  "tropical-acai": "Frete grátis", "pizza-do-vale": "25% OFF", "pao-de-ouro": "10% OFF", "lanchonete-da-praca": "Frete grátis", "pizzaria-aco-quente": "20% OFF",
+};
+export const promoOf = (s: Pick<FoodStore, "id">): string | null => PROMOS[s.id] ?? null;
+
+/** Preço médio dos itens do cardápio (centavos), usado só para ordenar "menor preço". */
+export const avgPriceCents = (s: Pick<FoodStore, "menu">) => (s.menu.length ? Math.round(s.menu.reduce((t, i) => t + i.priceCents, 0) / s.menu.length) : 0);
+
+/** Cupons FICTÍCIOS da demonstração: nada disso é abatido de verdade no checkout. */
+export type FoodCoupon = { id: string; title: string; rule: string; code: string; validUntil: string; tone: CoverTone };
+export const FOOD_COUPONS: FoodCoupon[] = [
+  { id: "frete-1a", title: "Frete grátis na 1ª compra", rule: "Em pedidos acima de R$ 25,00 com entrega. Uma vez por conta.", code: "PRIMEIRA", validUntil: "31/12/2026", tone: 3 },
+  { id: "pizza20", title: "20% OFF em pizzas", rule: "Em pizzarias participantes, até R$ 15,00 de desconto. Não acumula com outros cupons.", code: "PIZZA20", validUntil: "15/12/2026", tone: 2 },
+  { id: "acai10", title: "R$ 10 OFF no açaí", rule: "Em pedidos acima de R$ 40,00 em açaiterias participantes.", code: "ACAI10", validUntil: "20/12/2026", tone: 0 },
+  { id: "noite", title: "Frete grátis à noite", rule: "Pedidos feitos entre 19h e 22h, nas lojas com entrega própria.", code: "NOITE", validUntil: "31/01/2027", tone: 1 },
+];
+
+/** Banners promocionais do carrossel da home (fictícios). `to`: "cupons" abre a tela de cupons; senão é o id de uma loja. */
+export type FoodBanner = { id: string; title: string; sub: string; tone: CoverTone; glyph: FoodCategoryId; to: string };
+export const FOOD_BANNERS: FoodBanner[] = [
+  { id: "b-frete", title: "Frete grátis na 1ª compra", sub: "Use o cupom PRIMEIRA", tone: 3, glyph: "lanches", to: "cupons" },
+  { id: "b-pizza", title: "Pizza com 20% OFF", sub: "Hoje, em pizzarias participantes", tone: 2, glyph: "pizza", to: "cupons" },
+  { id: "b-acai", title: "Açaí para refrescar", sub: "R$ 10 OFF acima de R$ 40", tone: 1, glyph: "acai", to: "cupons" },
+  { id: "b-noite", title: "Frete grátis à noite", sub: "Das 19h às 22h, com o cupom NOITE", tone: 0, glyph: "espetinho", to: "cupons" },
 ];
 
 export const storeById = (id: string) => FOOD_STORES.find((s) => s.id === id);

@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import type { CartLine, Fulfillment, PaymentChoice, Turn } from "@/shared/food/types";
+import type { CartLine, FoodCityId, Fulfillment, PaymentChoice, Turn } from "@/shared/food/types";
 import type { FoodQuote } from "@/shared/food/pricing";
 
 /**
@@ -20,10 +20,25 @@ export type FoodState = {
   turns: Record<string, Turn[]>;
   /** Itens desligados no painel da loja, por loja. */
   off: Record<string, string[]>;
+  /** Lojas favoritas (ids) e itens favoritos ("lojaId:itemId"). */
+  favStores: string[];
+  favItems: string[];
+  /** Avaliação do pedido (1 a 5 estrelas e comentário), por id do pedido. */
+  reviews: Record<string, FoodReview>;
+  /** Reclamações da loja, por id do pedido. */
+  complaints: Record<string, FoodComplaint>;
+  /** Última cidade escolhida na aba Food. */
+  city: FoodCityId | null;
 };
+export type FoodReview = { stars: number; comment: string; at: number };
+export type FoodComplaint = { reason: string; text: string; at: number };
+
+export const COMPLAINT_REASONS = ["Pedido atrasou", "Item faltando ou errado", "Qualidade da comida", "Atendimento da loja", "Cobrança diferente", "Outro motivo"] as const;
 
 const KEY = "orbi-food-v1";
-const EMPTY: FoodState = { carts: {}, orders: [], turns: {}, off: {} };
+const EMPTY: FoodState = { carts: {}, orders: [], turns: {}, off: {}, favStores: [], favItems: [], reviews: {}, complaints: {}, city: null };
+const CITY_IDS: FoodCityId[] = ["ipatinga", "fabriciano", "timoteo"];
+const strings = (v: unknown, max: number) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, max) : []);
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isLine = (l: unknown): l is CartLine =>
@@ -47,7 +62,12 @@ export function readFoodState(): FoodState {
     if (isObj(raw.turns)) for (const [k, v] of Object.entries(raw.turns)) if (Array.isArray(v) && v.every(isTurn)) turns[k] = v;
     const off: FoodState["off"] = {};
     if (isObj(raw.off)) for (const [k, v] of Object.entries(raw.off)) if (Array.isArray(v)) off[k] = v.filter((x): x is string => typeof x === "string");
-    return { carts, orders: Array.isArray(raw.orders) ? raw.orders.filter(isOrder).slice(0, 20) : [], turns, off };
+    const reviews: FoodState["reviews"] = {};
+    if (isObj(raw.reviews)) for (const [k, v] of Object.entries(raw.reviews)) if (isObj(v) && Number.isInteger(v.stars) && (v.stars as number) >= 1 && (v.stars as number) <= 5 && typeof v.comment === "string") reviews[k] = { stars: v.stars as number, comment: v.comment.slice(0, 500), at: Number(v.at) || 0 };
+    const complaints: FoodState["complaints"] = {};
+    if (isObj(raw.complaints)) for (const [k, v] of Object.entries(raw.complaints)) if (isObj(v) && typeof v.reason === "string" && typeof v.text === "string") complaints[k] = { reason: v.reason.slice(0, 80), text: v.text.slice(0, 1000), at: Number(v.at) || 0 };
+    const city = CITY_IDS.find((c) => c === raw.city) ?? null;
+    return { carts, orders: Array.isArray(raw.orders) ? raw.orders.filter(isOrder).slice(0, 20) : [], turns, off, favStores: strings(raw.favStores, 100), favItems: strings(raw.favItems, 300), reviews, complaints, city };
   } catch { return { ...EMPTY }; }
 }
 

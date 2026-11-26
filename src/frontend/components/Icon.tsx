@@ -5,6 +5,7 @@ import {
   ShareNetwork, ShieldCheck, SignOut, Siren, Sparkle, Stack, Star, SteeringWheel, Storefront, Sun, Ticket, Tire, Truck, User, Users,
   Wallet, Wrench, X, Money, QrCode, CreditCard, DeviceMobile, Copy, NavigationArrow, MagnifyingGlass, FirstAidKit, AirplaneTilt, GraduationCap, Bank, Tree, Factory, Church, SoccerBall, Bus,
   InstagramLogo, TiktokLogo, FacebookLogo, Envelope, WhatsappLogo, Eye, EyeSlash,
+  ClipboardText, ShoppingBag, Heart, SlidersHorizontal, CaretDown,
 } from "@phosphor-icons/react/dist/ssr";
 
 /**
@@ -21,6 +22,8 @@ const ICONS: Record<string, PhosphorIcon> = {
   home: House, briefcase: Briefcase, calendar: CalendarBlank, bolt: Lightning, search: MagnifyingGlass, money: Money, qr: QrCode, card: CreditCard, phone: DeviceMobile, copy: Copy, navigation: NavigationArrow,
   hospital: FirstAidKit, airport: AirplaneTilt, school: GraduationCap, civic: Bank, park: Tree, factory: Factory, church: Church, stadium: SoccerBall, bus: Bus,
   instagram: InstagramLogo, tiktok: TiktokLogo, facebook: FacebookLogo, mail: Envelope, whatsapp: WhatsappLogo, eye: Eye, eyeOff: EyeSlash,
+  // Orbi Food (demonstração)
+  clipboard: ClipboardText, bag: ShoppingBag, heart: Heart, sliders: SlidersHorizontal, caret: CaretDown,
 };
 
 export type IconName = keyof typeof ICONS;

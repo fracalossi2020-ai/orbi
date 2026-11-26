@@ -62,8 +62,8 @@ describe("Orbi Food: preço", () => {
     expect(FOOD_COMMISSIONS.every((c) => c.bps === null || c.bps > 0)).toBe(true);
   });
 
-  it("cardápios da demo: 7 lojas, 6 a 10 itens, preços e opcionais coerentes", () => {
-    expect(FOOD_STORES).toHaveLength(7);
+  it("cardápios da demo: 15 lojas, 6 a 10 itens, preços e opcionais coerentes", () => {
+    expect(FOOD_STORES).toHaveLength(15);
     for (const s of FOOD_STORES) {
       expect(s.menu.length).toBeGreaterThanOrEqual(6);
       expect(s.menu.length).toBeLessThanOrEqual(10);
