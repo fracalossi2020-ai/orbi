@@ -66,8 +66,28 @@ export function rideForExport<T extends { passengerId: string; driverId: string 
 /** Campos da conta que nunca vão para a tela da equipe: resumo da senha, segredos da verificação em duas etapas, vínculo do Google e e-mail pendente. */
 const USER_SECRETS = ["passwordHash", "totpSecret", "totpLastStep", "recoveryCodes", "googleSub", "pendingEmail"] as const;
 
-export function staffUserView<T extends Record<string, unknown>>(user: T): Omit<T, (typeof USER_SECRETS)[number]> {
+/** Quem vê CPF e CNH inteiros na lista: administrador e gestor. O atendente vê mascarado e pode pedir para revelar (fica na auditoria). */
+export const canSeeFullPii = (role: string) => role === "admin" || role === "gestor";
+
+/** "12345678909" vira "***.456.789-**". Valor vazio continua vazio. */
+export function maskCpfValue(cpf: string | null | undefined): string | null {
+  const d = (cpf ?? "").replace(/\D/g, "");
+  if (d.length !== 11) return cpf ? "***" : null;
+  return `***.${d.slice(3, 6)}.${d.slice(6, 9)}-**`;
+}
+
+/** Da CNH sobram só os 3 últimos dígitos. */
+export function maskCnhValue(cnh: string | null | undefined): string | null {
+  const d = (cnh ?? "").replace(/\D/g, "");
+  if (!d) return cnh ? "***" : null;
+  return `${"*".repeat(Math.max(3, d.length - 3))}${d.slice(-3)}`;
+}
+
+/** Conta como a equipe vê: sem segredos e, para quem não é admin nem gestor, com CPF mascarado. Padrão: mascarado. */
+export function staffUserView<T extends Record<string, unknown>>(user: T, fullPii = false): Omit<T, (typeof USER_SECRETS)[number]> & { piiMasked: boolean } {
   const out: Record<string, unknown> = { ...user };
   for (const k of USER_SECRETS) delete out[k];
-  return out as Omit<T, (typeof USER_SECRETS)[number]>;
+  if (!fullPii && "cpf" in out) out.cpf = maskCpfValue(out.cpf as string | null);
+  out.piiMasked = !fullPii;
+  return out as Omit<T, (typeof USER_SECRETS)[number]> & { piiMasked: boolean };
 }

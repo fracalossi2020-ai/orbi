@@ -102,6 +102,8 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
 .btn-on-deep:hover { transform: translateY(-2px); box-shadow: 0 16px 34px -14px color-mix(in srgb, var(--cta, #000) 80%, transparent); }
 .btn-line-deep { color: var(--on-deep); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--on-deep) 45%, transparent) inset; }
 .btn-line-deep:hover { box-shadow: 0 0 0 1.5px var(--on-deep) inset; transform: translateY(-2px); }
+/* Celular: texto longo quebra em duas linhas em vez de ser cortado pela borda do botão. */
+@media (max-width: 767px) { .btn { white-space: normal; text-align: center; } }
 .btn-lg { min-height: 56px; padding: .9rem 1.7rem; font-size: 1.05rem; }
 .btn-sm { min-height: 38px; padding: .4rem .9rem; font-size: .875rem; }
 @media (pointer: coarse) { .btn-sm { min-height: 44px; } }
@@ -192,6 +194,11 @@ select.input { appearance: auto; }
 @keyframes page-out { to { opacity: 0; transform: translateY(-14px); filter: blur(4px); } }
 @keyframes page-in { from { opacity: 0; transform: translateY(18px); filter: blur(4px); } }
 @media (prefers-reduced-motion: reduce) { ::view-transition-old(.page-swap), ::view-transition-new(.page-swap) { animation: none; } }
+/* Celular: sem desfoque nem troca animada entre páginas (o desfoque deixava "fantasmas" de títulos na tela). */
+@media (max-width: 767px) {
+  ::view-transition-old(.page-swap), ::view-transition-new(.page-swap) { animation: none; }
+  .site-one main section.hero-light h1 > span { filter: none !important; }
+}
 /* Cartão de tarifa: brilho sutil passando, como tela de painel */
 .tariff-card { background: linear-gradient(160deg, color-mix(in srgb, var(--on-deep) 7%, transparent), transparent 60%); }
 .tariff-card::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 40%, color-mix(in srgb, var(--mark) 12%, transparent) 50%, transparent 60%); background-size: 250% 100%; animation: map-shimmer 5s linear infinite; pointer-events: none; }
@@ -239,6 +246,7 @@ select.input { appearance: auto; }
 input[type="checkbox"], input[type="radio"] { flex-shrink: 0; }
 @media (pointer: coarse) {
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea { font-size: max(1em, 16px); }
+  input[type="range"] { min-height: 44px; }
   a, button, [role="button"], label, summary { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 }
 /* Mapa carregando: a cor do mapa com um brilho passando, em vez de um bloco vazio. */
@@ -310,7 +318,7 @@ input[type="checkbox"], input[type="radio"] { flex-shrink: 0; }
 }
 html:has(.site-one), html:has(.site-one) body { background: #FFFFFF; }
 /* O menu é fixo (64 px): o conteúdo começa logo abaixo dele. */
-.site-one main { padding-top: 64px; }
+.site-one main { padding-top: calc(64px + env(safe-area-inset-top)); }
 .site-one footer.on-deep { margin: 0 8px 8px; border-radius: 28px; overflow: hidden; }
 @media (min-width: 768px) { .site-one footer.on-deep { margin: 0 12px 12px; border-radius: 36px; } }
 .site-one main section.on-deep { margin: 8px; border-radius: 28px; overflow: hidden; }
@@ -342,7 +350,8 @@ html:has(.site-one), html:has(.site-one) body { background: #FFFFFF; }
  * Quanto mais a pessoa desce, mais a página "chega perto": a abertura se afasta, cada painel cresce até ocupar
  * seu lugar, os títulos sobem e o símbolo gira. Só CSS, presa à rolagem; sem efeito em "reduzir movimento"
  * e em navegadores sem animação por rolagem (aí tudo aparece parado, já no lugar). */
-@media (prefers-reduced-motion: no-preference) {
+/* Só do tablet para cima: no celular esses efeitos deixavam títulos e painéis meio apagados durante a rolagem (fantasmas). */
+@media (prefers-reduced-motion: no-preference) and (min-width: 768px) {
   @supports (animation-timeline: view()) {
     .site-one main section.hero-light > div { animation: site-hero-out linear both; animation-timeline: view(); animation-range: exit 0% exit 90%; }
     .site-one main section.on-deep:not(.hero-light), .site-one main section[data-panel] {
@@ -390,3 +399,6 @@ html:has(.site-one), html:has(.site-one) body { background: #FFFFFF; }
 .ag-cta { color: #FFFFFF; background: linear-gradient(180deg, #3B86FF 0%, #0356C5 100%); box-shadow: 0 18px 32px -16px rgb(3 86 197 / .75), inset 0 1px 0 rgb(255 255 255 / .35); transition: transform .15s, filter .15s; }
 .ag-cta:not(:disabled):hover { transform: translateY(-1px); filter: brightness(1.05); }
 .ag-cta:disabled { opacity: .7; }
+
+/* Campo-isca dos formulários abertos (src/frontend/components/BotGuard.tsx): fora da tela, sem display:none. */
+.hp-field { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }

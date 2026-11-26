@@ -144,11 +144,11 @@ export function StoryPhone() {
 
   return (
     <section ref={host} aria-labelledby="historia" className="on-deep relative bg-deep text-on-deep lg:h-[340svh]">
-      <div className="mx-auto grid max-w-[1440px] items-center gap-10 px-5 py-20 md:px-10 lg:sticky lg:top-0 lg:h-svh lg:grid-cols-[1.1fr_1fr] lg:py-0">
+      <div className="mx-auto grid max-w-[1440px] items-center gap-10 px-5 py-10 md:px-10 md:py-20 lg:sticky lg:top-0 lg:h-svh lg:grid-cols-[1.1fr_1fr] lg:py-0">
         <div className="relative">
           <p className="mono-label text-on-deep-muted">Como pedir uma viagem</p>
-          <h2 id="historia" className="display mt-3 max-w-[14ch] text-[clamp(2.2rem,4.6vw,4rem)]">Do toque ao destino.</h2>
-          <ol className="relative mt-10 space-y-2">
+          <h2 id="historia" className="display mt-3 max-w-[14ch] text-[clamp(1.9rem,4.6vw,4rem)]">Do toque ao destino.</h2>
+          <ol className="relative mt-6 space-y-2 md:mt-10">
             <span aria-hidden="true" className="absolute top-3 bottom-3 left-[27px] hidden w-px bg-[color-mix(in_srgb,var(--on-deep)_16%,transparent)] lg:block" />
             <motion.span aria-hidden="true" className="absolute top-3 left-[27px] hidden w-px bg-[var(--mark)] lg:block" style={{ height: progress, maxHeight: "calc(100% - 1.5rem)" }} />
             {CHAPTERS.map((c, i) => {
@@ -156,12 +156,12 @@ export function StoryPhone() {
               return (
                 <li key={c.title}>
                   <button type="button" onClick={() => setStep(i)} aria-current={on ? "step" : undefined}
-                    className={`relative flex w-full gap-4 rounded-[24px] p-3 text-left transition-all duration-300 ${on ? "bg-[color-mix(in_srgb,var(--on-deep)_8%,transparent)]" : "opacity-55 hover:opacity-90"}`}>
+                    className={`relative flex w-full gap-4 rounded-[24px] p-3 text-left transition-all duration-300 max-md:items-center max-md:bg-transparent max-md:px-0 max-md:py-2.5 max-md:opacity-100 ${on ? "bg-[color-mix(in_srgb,var(--on-deep)_8%,transparent)]" : "opacity-55 hover:opacity-90"}`}>
                     <span className={`grid size-12 shrink-0 place-items-center rounded-2xl transition-colors ${on ? "bg-[var(--mark)] text-deep" : "bg-[color-mix(in_srgb,var(--on-deep)_10%,transparent)]"}`}><Icon name={c.icon} size={24} weight={on ? "fill" : "duotone"} /></span>
                     <span className="min-w-0">
-                      <span className="mono-label block text-on-deep-muted">Passo {i + 1} de 4</span>
-                      <span className="mt-1 block text-lg font-semibold">{c.title}</span>
-                      <span className="mt-0.5 block text-on-deep-muted">{c.text}</span>
+                      <span className="mono-label block text-on-deep-muted max-md:hidden">Passo {i + 1} de 4</span>
+                      <span className="mt-1 block text-lg font-semibold max-md:mt-0"><span className="md:hidden">{i + 1}. </span>{c.title}</span>
+                      <span className="mt-0.5 block text-on-deep-muted max-md:text-[15px]">{c.text}</span>
                     </span>
                   </button>
                 </li>
@@ -169,7 +169,7 @@ export function StoryPhone() {
             })}
           </ol>
         </div>
-        <div className="flex justify-center py-4">
+        <div className="flex justify-center py-4 max-md:hidden">
           <div className="relative">
             <div aria-hidden="true" className="absolute -inset-10 -z-10 rounded-full blur-3xl" style={{ background: "radial-gradient(closest-side, color-mix(in srgb, var(--primary) 45%, transparent), transparent)" }} />
             <PhoneFrame className="lg:scale-[1.05]">

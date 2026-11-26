@@ -47,7 +47,8 @@ test("login: trava por conta mesmo trocando de IP; senha fraca é recusada", asy
   const p = await passengerApi();
   const me = (await (await p.get("/api/me")).json()).user;
   let last = 0;
-  for (let i = 0; i < 10; i++) {
+  // Da 10ª falha a conta fica bloqueada (401 genérico) e, passando de 12 pedidos na janela, o limite responde 429.
+  for (let i = 0; i < 13; i++) {
     const c = await apiClient(); // cada tentativa de um "IP" diferente
     last = (await c.post("/api/auth/login", { data: { identifier: me.email, password: `errada-${i}` } })).status();
   }

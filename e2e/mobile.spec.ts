@@ -57,3 +57,83 @@ for (const [name, dev] of Object.entries(PHONES)) {
     }
   });
 }
+
+/** Páginas públicas que precisam caber em 360 px de largura (o celular mais estreito comum). */
+const SITE_PAGES = ["/", "/como-funciona", "/passageiros", "/motoristas", "/motoristas/requisitos", "/clube", "/empresa", "/ajuda", "/contato", "/interesse", "/parceiros", "/cidades/ipatinga", "/privacidade", "/termos", "/status", "/entrar", "/cadastro"];
+const overlaps = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+test("celular 360: sem rolagem lateral, aviso de cookies compacto e menu do site", async ({ browser }) => {
+  test.setTimeout(240_000);
+  const ctx = await browser.newContext({ ...PHONES.Android, baseURL: BASE, viewport: { width: 360, height: 740 } });
+  const page = await ctx.newPage();
+  try {
+    // Primeira visita: o aviso de cookies aparece, mas como uma faixa curta que não cobre os campos do formulário do hero.
+    await page.goto("/");
+    const notice = page.getByRole("region", { name: "Aviso de cookies" });
+    await expect(notice).toBeVisible();
+    const nb = (await notice.boundingBox())!;
+    expect(nb.height, "aviso de cookies deve ser uma faixa de 1 a 3 linhas").toBeLessThanOrEqual(84);
+    const hero = page.locator("#pedir");
+    for (const target of [page.getByRole("combobox", { name: "Local de partida" }), page.getByRole("combobox", { name: "Local de chegada" }), hero.getByRole("button", { name: /Ver preços/ })]) {
+      await expect(target).toBeVisible();
+      expect(overlaps((await target.boundingBox())!, nb), "o aviso cobre um campo do hero").toBeFalsy();
+    }
+    expect(await overflow(page)).toBeLessThanOrEqual(0);
+    // No celular o hero não tem a ilustração do telefone (uma ideia por tela): só título, uma frase e o formulário.
+    await expect(page.locator("section.hero-light div[aria-hidden='true'][class*='rounded-[48px]']").first()).toBeHidden();
+    await expect(page.getByText("Experimente aqui embaixo")).toBeHidden();
+    // A página inteira cabe em ~5 telas (eram 7,7 depois do primeiro ajuste e 9,5 antes).
+    expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThan(740 * 5);
+
+    // Menu hambúrguer: abre, mostra os links com alvo de toque de 44 px e os botões de conta, e fecha.
+    await page.getByRole("button", { name: "Abrir menu" }).click();
+    const menu = page.getByRole("navigation", { name: "Menu" });
+    await expect(menu).toBeVisible();
+    for (const link of await menu.getByRole("link").all()) expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await expect(menu.getByRole("link", { name: "Criar conta" })).toBeVisible();
+    await expect(menu.getByRole("link", { name: "Entrar", exact: true })).toBeVisible();
+    expect(await overflow(page)).toBeLessThanOrEqual(0);
+    await page.getByRole("button", { name: "Fechar menu" }).click();
+    await expect(menu).toBeHidden();
+
+    // "Entendi" dispensa o aviso e ele não volta.
+    await notice.getByRole("button", { name: "Entendi" }).click();
+    await expect(notice).toBeHidden();
+    await page.reload();
+    await expect(notice).toBeHidden();
+
+    for (const p of SITE_PAGES) {
+      await page.goto(p);
+      await page.waitForLoadState("load");
+      expect(await overflow(page), `${p} passa da largura`).toBeLessThanOrEqual(0);
+      // Campos com pelo menos 16 px: abaixo disso o iPhone dá zoom ao tocar.
+      const small = await page.evaluate(() => [...document.querySelectorAll("input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=hidden]), select, textarea")]
+        .filter((el) => (el as HTMLElement).offsetParent && parseFloat(getComputedStyle(el).fontSize) < 16).map((el) => (el as HTMLInputElement).name || el.tagName));
+      expect(small, `${p}: campos com letra menor que 16 px`).toEqual([]);
+    }
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("celular 360: tabelas do painel viram cartões, sem rolagem lateral", async ({ browser }) => {
+  const admin = await adminApi();
+  const ctx = await browser.newContext({ ...PHONES.Android, baseURL: BASE, viewport: { width: 360, height: 740 }, storageState: await admin.storageState(), extraHTTPHeaders: { "x-forwarded-for": "10.0.250.1" } });
+  const page = await ctx.newPage();
+  try {
+    for (const p of ["/admin/usuarios", "/admin/viagens", "/admin/tarifas", "/admin/regioes"]) {
+      await page.goto(p);
+      await expect(page.locator("main h1").first()).toBeVisible();
+      expect(await overflow(page), `${p} passa da largura`).toBeLessThanOrEqual(0);
+      const table = page.locator("table").first();
+      if (await table.count()) {
+        // Os cartões cabem na tela: nenhuma célula passa da borda direita.
+        const wide = await page.evaluate(() => [...document.querySelectorAll("main table td")].filter((td) => td.getBoundingClientRect().right > innerWidth + 1).length);
+        expect(wide, `${p}: células fora da tela`).toBe(0);
+      }
+    }
+  } finally {
+    await ctx.close();
+  }
+});

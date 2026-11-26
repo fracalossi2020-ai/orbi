@@ -35,6 +35,10 @@ export const users = pgTable("users", {
   totpLastStep: integer("totp_last_step"),
   // Códigos de recuperação (resumos), para quem perder o celular.
   recoveryCodes: jsonb("recovery_codes").$type<string[]>(),
+  // Senhas erradas seguidas (bloqueio progressivo, src/shared/lockout.ts). Zera no login certo e na troca de senha por "Esqueci a senha".
+  failedLogins: integer("failed_logins").notNull().default(0),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  lastFailedAt: timestamp("last_failed_at", { withTimezone: true }),
   createdAt: createdAt(),
 });
 
@@ -52,7 +56,33 @@ export const sessions = pgTable("sessions", {
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   // Quando a segunda etapa (código do autenticador) foi confirmada nesta sessão.
   mfaAt: timestamp("mfa_at", { withTimezone: true }),
+  // Última reautenticação (step-up) para ações sensíveis do painel; vale 5 minutos.
+  stepUpAt: timestamp("step_up_at", { withTimezone: true }),
+  // IP de quem abriu a sessão, mascarado (IPv4 em /24, IPv6 em /64). O navegador fica em user_agent.
+  ip: text("ip"),
 }, (t) => [index("sessions_user").on(t.userId)]);
+
+/**
+ * Contadores de tentativas que sobrevivem a reinício e valem para várias instâncias (login, segunda etapa, códigos, CPF...).
+ * Atualizados de forma atômica (INSERT ... ON CONFLICT DO UPDATE); o sweeper apaga as chaves vencidas.
+ */
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(),
+  n: integer("n").notNull().default(0),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull().defaultNow(),
+  blockedUntil: timestamp("blocked_until", { withTimezone: true }),
+});
+
+/** Convites para criar conta da equipe: token aleatório de uso único, guardado só como HMAC, válido por 24 h. */
+export const staffInvites = pgTable("staff_invites", {
+  id: id(),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  tokenHash: text("token_hash").notNull().unique(),
+  createdBy: uuid("created_by"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [index("staff_invites_user").on(t.userId)]);
 
 /** Códigos de 6 dígitos enviados por e-mail. Só o resumo (hash) fica guardado. */
 export const verificationCodes = pgTable("verification_codes", {
@@ -445,6 +475,9 @@ export const auditLog = pgTable("audit_log", {
   entity: text("entity").notNull(),
   entityId: text("entity_id"),
   meta: jsonb("meta").$type<Record<string, unknown>>(),
+  // De onde veio a ação: IP mascarado (/24 ou /64) e navegador. Vazios quando a ação não vem de um pedido (motor de corridas).
+  ip: text("ip"),
+  ua: text("ua"),
   createdAt: createdAt(),
 }, (t) => [index("audit_log_actor_action").on(t.actorId, t.action, t.createdAt)]);
 

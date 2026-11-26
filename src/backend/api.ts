@@ -1,39 +1,38 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { ZodError, type ZodType } from "zod";
-import { currentUser, type SessionUser } from "./auth";
+import { currentSession, requireStepUp, type SessionRow, type SessionUser } from "./auth";
 import { isUuid } from "@/shared/validation";
 import { can, STAFF, type Resource, type Role } from "@/shared/permissions";
 import { getDb, schema as s } from "@/database";
 import { ensureSweeper, RideError } from "./rides";
 import { clientIp, rateLimit } from "./security";
+import { ApiError } from "./api-error";
+import { currentHostRole, separatedHosts, trustForwardedHost } from "./host";
+import { isAdminApiPath, isSameOriginRequest } from "@/shared/hosts";
+import { proxyHops } from "@/shared/runtime-config";
+import { adminAllowList, ipAllowed } from "@/shared/ip-allow";
+import { rawClientIp } from "@/shared/client-ip";
 
-/** code: identificador estável para o app reagir (por exemplo, "mfa_setup" leva à tela de ativar as duas etapas). */
-export class ApiError extends Error {
-  constructor(public status: number, message: string, public code?: string) { super(message); }
-}
+export { ApiError, requireStepUp };
 
-type Ctx<P> = { req: NextRequest; user: SessionUser; params: P };
-type PublicCtx<P> = { req: NextRequest; user: SessionUser | null; params: P };
-
-const trustProxy = () => process.env.TRUST_PROXY === "true" || process.env.NODE_ENV !== "production";
+type Ctx<P> = { req: NextRequest; user: SessionUser; session: SessionRow; params: P };
+type PublicCtx<P> = { req: NextRequest; user: SessionUser | null; session: SessionRow | null; params: P };
 
 /**
  * Proteção contra ações disparadas por outros sites (CSRF). Ações só valem vindas do próprio site:
- * confere o Origin e, na falta dele, o Sec-Fetch-Site que o navegador envia. Por trás de um proxy
- * (hospedagem, túnel de teste), o endereço público vem em x-forwarded-host, aceito só com TRUST_PROXY.
+ * confere o Origin e, na falta dele, o Sec-Fetch-Site que o navegador envia. Regras em shared/hosts.ts (isSameOriginRequest).
+ * Um host só: por trás de um proxy (hospedagem, túnel de teste), x-forwarded-host vale com TRUST_PROXY (ou fora de produção).
+ * Modo separado: só o Origin do próprio host que recebeu o pedido, e x-forwarded-host só com TRUST_PROXY=true.
  */
 function sameOrigin(req: NextRequest) {
-  if (req.method === "GET" || req.method === "HEAD") return true;
-  const site = req.headers.get("sec-fetch-site");
-  const origin = req.headers.get("origin");
-  if (!origin) return !site || site === "same-origin" || site === "none";
-  let host: string;
-  try { host = new URL(origin).host; } catch { return false; }
-  if (host === req.headers.get("host")) return true;
-  if (trustProxy() && host === req.headers.get("x-forwarded-host")) return true;
-  try { if (process.env.APP_URL && host === new URL(process.env.APP_URL).host) return true; } catch { /* APP_URL inválida */ }
-  // Teste no celular pelo túnel da Cloudflare (npm run celular): só fora de produção.
-  return process.env.NODE_ENV !== "production" && host.endsWith(".trycloudflare.com");
+  const cfg = separatedHosts();
+  return isSameOriginRequest({
+    method: req.method, origin: req.headers.get("origin"), secFetchSite: req.headers.get("sec-fetch-site"),
+    host: req.headers.get("host"), forwardedHost: req.headers.get("x-forwarded-host"), cfg,
+    hops: proxyHops(process.env) ?? 1,
+    trustForwarded: cfg ? trustForwardedHost() : trustForwardedHost() || process.env.NODE_ENV !== "production",
+    appUrl: process.env.APP_URL, production: process.env.NODE_ENV === "production",
+  });
 }
 
 // Respostas da API têm dados pessoais: nada de cache no navegador ou em proxies, salvo quando a rota diz o contrário.
@@ -66,26 +65,31 @@ export function publicRoute<P = Record<string, string>>(fn: (ctx: PublicCtx<P>) 
         throw new ApiError(429, "Muitas ações em pouco tempo. Aguarde alguns minutos.");
       }
       ensureSweeper();
-      const out = await fn({ req, user: await currentUser(), params: (await rc.params) as P });
+      const cur = await currentSession();
+      const out = await fn({ req, user: cur?.user ?? null, session: cur?.session ?? null, params: (await rc.params) as P });
       return noStore(out instanceof Response ? out : NextResponse.json(out ?? { ok: true }));
     } catch (e) { return respond(e); }
   };
 }
 
 /** Equipe sem verificação em duas etapas não usa o painel (exceto se desligado de propósito em ambiente de teste). */
-const staffMfaRequired = () => process.env.PRUMO_REQUIRE_STAFF_MFA !== "false";
+export const staffMfaRequired = () => process.env.PRUMO_REQUIRE_STAFF_MFA !== "false";
 
 /** Equipe sem a verificação em duas etapas ativa (quando ela é exigida). */
 export const staffMissingMfa = (user: SessionUser) => STAFF.includes(user.role) && staffMfaRequired() && !user.totpEnabledAt;
 
 export function route<P = Record<string, string>>(fn: (ctx: Ctx<P>) => Promise<unknown>, opts: { roles?: Role[] } = {}) {
-  return publicRoute<P>(async ({ req, user, params }) => {
-    if (!user) throw new ApiError(401, "Entre na sua conta para continuar.");
+  return publicRoute<P>(async ({ req, user, session, params }) => {
+    // Defesa em profundidade (o proxy já barra): /api/admin só responde no host do painel.
+    if (separatedHosts() && isAdminApiPath(req.nextUrl.pathname) && (await currentHostRole()) !== "admin") throw new ApiError(404, "Recurso não encontrado.");
+    // Lista de IPs do painel (ADMIN_ALLOWED_IPS): fora dela, a API do painel nem existe.
+    if (isAdminApiPath(req.nextUrl.pathname) && !ipAllowed(adminAllowList(), rawClientIp(req.headers))) throw new ApiError(404, "Recurso não encontrado.");
+    if (!user || !session) throw new ApiError(401, "Entre na sua conta para continuar.");
     if (opts.roles && !opts.roles.includes(user.role)) throw new ApiError(403, "Sua conta não tem acesso a este recurso.");
-    if (staffMissingMfa(user) && req.nextUrl.pathname.startsWith("/api/admin")) {
+    if (staffMissingMfa(user) && isAdminApiPath(req.nextUrl.pathname)) {
       throw new ApiError(403, "Para usar o painel, ative a verificação em duas etapas na sua conta.", "mfa_setup");
     }
-    return fn({ req, user, params });
+    return fn({ req, user, session, params });
   });
 }
 

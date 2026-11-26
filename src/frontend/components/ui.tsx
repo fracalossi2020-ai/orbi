@@ -6,15 +6,26 @@ import { STATIC } from "@/frontend/lib/site-mode";
 
 // ------------------------------------------------------------------ dados
 
+/** O painel registra aqui como pedir o código de reautenticação (modal). Sem registro (apps do passageiro e do motorista), nada muda. */
+let stepUpHandler: (() => Promise<void>) | null = null;
+export function setStepUpHandler(fn: (() => Promise<void>) | null) { stepUpHandler = fn; }
+
 export async function api<T = any>(url: string, init?: { method?: string; body?: unknown }): Promise<T> { // eslint-disable-line
   // Versão vitrine: sem servidor, a resposta é montada no navegador.
   if (STATIC) return (await import("@/frontend/lib/static-api")).staticApi(url) as Promise<T>;
-  const res = await fetch(url, {
+  const send = () => fetch(url, {
     method: init?.method ?? (init?.body !== undefined ? "POST" : "GET"),
     headers: init?.body !== undefined ? { "Content-Type": "application/json" } : undefined,
     body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
   });
-  const data = await res.json().catch(() => ({}));
+  let res = await send();
+  let data = await res.json().catch(() => ({}));
+  // Ação sensível do painel: o servidor pede uma reautenticação recente. O modal pede o código e a ação é repetida uma vez.
+  if (res.status === 403 && data.code === "step_up" && stepUpHandler) {
+    await stepUpHandler();
+    res = await send();
+    data = await res.json().catch(() => ({}));
+  }
   if (!res.ok) throw Object.assign(new Error(data.error ?? "Não foi possível concluir. Verifique a conexão e tente de novo."), { code: data.code as string | undefined });
   return data;
 }

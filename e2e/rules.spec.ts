@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { PASSWORD, TEST_PIX, openTrip, adminApi, advance, apiClient, approvedDriverApi, BASE, driveRide, RIDE_DEST, RIDE_ORIGIN, chooseEntry, DRIVER_ADDRESS, ownAddress, DRIVER_REG, VEHICLE_REG, lastCode, login, makeCnh, passengerApi, registerApi, RIDE_BODY, signUp, unique, uniquePhone, validCpf } from "./helpers";
+import { createStaffApi, PASSWORD, TEST_PIX, openTrip, adminApi, advance, apiClient, approvedDriverApi, BASE, driveRide, RIDE_DEST, RIDE_ORIGIN, chooseEntry, DRIVER_ADDRESS, ownAddress, DRIVER_REG, VEHICLE_REG, lastCode, login, makeCnh, passengerApi, registerApi, RIDE_BODY, signUp, unique, uniquePhone, validCpf } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -14,15 +14,13 @@ test("controle de acesso por perfil", async () => {
   expect((await p.get("/api/admin/r/tariffs")).status()).toBe(403);
 
   const admin = await adminApi();
-  const email = `atendente${unique()}@e2e.prumo.test`;
-  expect((await admin.post("/api/admin/staff", { data: { name: "Ana Atendente", email, password: "senha-atendente-1", role: "atendente" } })).ok()).toBeTruthy();
-  const at = await apiClient();
-  expect((await at.post("/api/auth/login", { data: { identifier: email, password: "senha-atendente-1" } })).ok()).toBeTruthy();
+  // A conta da equipe nasce por convite: o administrador não escolhe a senha.
+  const { c: at } = await createStaffApi(admin, "atendente");
   expect((await at.get("/api/admin/tickets")).ok()).toBeTruthy();
   expect((await at.get("/api/admin/r/tariffs")).status()).toBe(403);
   const tariffs = await (await admin.get("/api/admin/r/tariffs")).json();
   expect((await at.patch(`/api/admin/r/tariffs/${tariffs.rows[0].id}`, { data: { commissionBps: 100 } })).status()).toBe(403);
-  expect((await at.post("/api/admin/staff", { data: { name: "Invasor", email: `x${unique()}@e2e.prumo.test`, password: "senha-qualquer-1", role: "admin" } })).status()).toBe(403);
+  expect((await at.post("/api/admin/staff", { data: { name: "Invasor", email: `x${unique()}@e2e.prumo.test`, role: "admin" } })).status()).toBe(403);
 });
 
 test("cadastro público não cria administrador nem motorista", async () => {
@@ -151,7 +149,11 @@ test("tarifa e cupom configurados no painel valem na corrida; cupom não reduz o
 
 test("LGPD: exportar e excluir conta anonimiza os dados", async () => {
   const p = await passengerApi();
-  const data = await (await p.get("/api/me/export")).json();
+  // A cópia dos dados pede a senha de novo (A10): sem ela, ou com ela errada, nada sai; GET não baixa mais.
+  expect((await p.get("/api/me/export")).status()).toBe(405);
+  expect((await p.post("/api/me/export", { data: {} })).status()).toBe(400);
+  expect((await p.post("/api/me/export", { data: { password: "errada-errada" } })).status()).toBe(400);
+  const data = await (await p.post("/api/me/export", { data: { password: "senha-de-teste" } })).json();
   expect(data.profile.email).toContain("@");
   expect(data.profile.passwordHash).toBeUndefined();
   // Excluir pede a senha de novo
@@ -250,7 +252,8 @@ test("entrada única: mesma tela cria conta, reconhece quem voltou e o botão vo
   await page.getByLabel("Celular com DDD").fill(phone);
   await advance(page);
   await page.getByRole("button", { name: "Esqueci minha senha" }).click();
-  await expect(page.getByText(/Enviamos um código/)).toContainText("@e2e.prumo.test");
+  // O pedido de nova senha responde sempre igual (não revela se a conta existe): a tela não mostra o e-mail.
+  await expect(page.getByText(/Se existir uma conta com esse dado/)).toBeVisible();
   await page.getByLabel("Código").fill("000000");
   await page.getByLabel("Nova senha").fill("nova-senha-123");
   await page.getByRole("button", { name: "Salvar nova senha" }).click();
@@ -402,7 +405,11 @@ test("troca de e-mail: fica pendente, pede a senha e só vale com o código do e
   // Esqueci a senha continua indo para o e-mail confirmado da conta, nunca para o pendente
   const anon = await apiClient();
   const reset = await (await anon.post("/api/auth/reset-request", { data: { identifier: before } })).json();
-  expect(reset.sentTo).toBeTruthy();
+  // Sempre a mesma resposta, tenha o dado conta ou não (A8); o código vai só para o e-mail confirmado.
+  expect(reset.message).toContain("Se existir uma conta");
+  expect(reset.sentTo).toBeUndefined();
+  const ghost = await (await anon.post("/api/auth/reset-request", { data: { identifier: `ninguem${unique()}@e2e.prumo.test` } })).json();
+  expect(ghost).toEqual(reset);
 
   expect((await c.post("/api/auth/email-confirm", { data: { code: "000000" } })).status()).toBe(400);
   expect((await c.post("/api/auth/email-confirm", { data: { code: lastCode(novo) } })).ok()).toBeTruthy();
@@ -539,7 +546,7 @@ test("a cópia dos dados do motorista não leva dados do passageiro; lista da eq
   expect(offer, "a oferta chegou ao motorista do teste").not.toBeNull();
   expect((await d.c.post(`/api/driver/offers/${offer!.id}`, { data: { accept: true } })).ok()).toBeTruthy();
   await driveRide(d.c, ride.id);
-  const exported = JSON.stringify(await (await d.c.get("/api/me/export")).json());
+  const exported = JSON.stringify(await (await d.c.post("/api/me/export", { data: { password: "senha-de-teste" } })).json());
   expect(exported).not.toContain("Joana Teste Convidada");
   expect(exported).not.toContain("31988887777");
   const users = (await (await admin.get("/api/admin/users")).json()).rows as Record<string, unknown>[];

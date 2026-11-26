@@ -96,7 +96,7 @@ export function EarningsSim() {
   const netDay = grossDay - commissionDay;
   const netShare = grossDay ? Math.round((netDay / grossDay) * 100) : 0;
   const rows = [["Por dia", 1], ["Por semana", days], ["Por mês", days * 4.33]] as const;
-  const select = "w-full cursor-pointer rounded-xl bg-[color-mix(in_srgb,var(--on-deep)_10%,transparent)] px-3 py-2.5 font-semibold";
+  const select = "min-h-11 w-full cursor-pointer rounded-xl bg-[color-mix(in_srgb,var(--on-deep)_10%,transparent)] px-3 py-2.5 font-semibold";
   return (
     <div data-glow className="glass-deep grid gap-8 rounded-[32px] p-6 md:p-9 lg:grid-cols-[1fr_1.1fr]">
       <div className="space-y-6">
@@ -129,12 +129,12 @@ export function EarningsSim() {
         <p className="mono-label mt-2 flex justify-between text-on-deep-muted"><span>Fica com você · {netShare}%</span><span>Comissão · {100 - netShare}%</span></p>
         <table className="num mt-6 w-full text-left text-sm sm:text-base">
           <caption className="sr-only">Ganhos estimados com os valores escolhidos</caption>
-          <thead><tr className="mono-label text-on-deep-muted"><th className="pb-2 font-medium"> </th><th className="pb-2 text-right font-medium">Bruto</th><th className="hidden pb-2 text-right font-medium sm:table-cell">Comissão</th><th className="pb-2 text-right font-medium">Você recebe</th></tr></thead>
+          <thead><tr className="mono-label text-on-deep-muted"><th className="pb-2 font-medium"> </th><th className="pb-2 text-right font-medium max-sm:hidden">Bruto</th><th className="hidden pb-2 text-right font-medium sm:table-cell">Comissão</th><th className="pb-2 pl-3 text-right font-medium">Você recebe</th></tr></thead>
           <tbody>
             {rows.map(([label, mult]) => (
               <tr key={label} className="border-t border-[color-mix(in_srgb,var(--on-deep)_12%,transparent)]">
                 <th scope="row" className="py-3 pr-2 font-medium whitespace-nowrap text-on-deep-muted">{label}</th>
-                <td className="py-3 text-right whitespace-nowrap"><Rolling cents={Math.round(grossDay * mult)} /></td>
+                <td className="py-3 text-right whitespace-nowrap max-sm:hidden"><Rolling cents={Math.round(grossDay * mult)} /></td>
                 <td className="hidden py-3 text-right text-on-deep-muted sm:table-cell">− <Rolling cents={Math.round(commissionDay * mult)} /></td>
                 <td className="py-3 text-right text-base font-semibold whitespace-nowrap text-[var(--mark)] sm:text-lg"><Rolling cents={Math.round(netDay * mult)} /></td>
               </tr>

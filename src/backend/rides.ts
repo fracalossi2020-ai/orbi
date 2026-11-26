@@ -20,6 +20,7 @@ import { createPixCharge, getPixStatus, paymentAvailability } from "./payments";
 import { startOfPeriodSp } from "./sql-time";
 import { audit } from "./audit-lite";
 import { blockedByDebt } from "./debt";
+import { securitySweep } from "./security-sweep";
 
 class RideError extends Error {
   status = 409;
@@ -398,6 +399,7 @@ export async function sweep() {
     const searching = await db.select({ id: s.rides.id }).from(s.rides).where(eq(s.rides.status, "searching"));
     for (const r of searching) await dispatchNext(db, r.id);
     await flagStuckRides(db);
+    await securitySweep().catch((e) => console.error("[sweep-seguranca]", e));
   } finally { sweepState.__prumoSweeping = false; }
 }
 

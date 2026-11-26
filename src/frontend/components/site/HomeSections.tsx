@@ -14,11 +14,14 @@ const focusTrip = () => {
 export function DriverBand() {
   return (
     <section aria-label="Para motoristas" data-panel className="relative isolate m-2 overflow-hidden rounded-[28px] bg-[#EAF2FF] text-ink md:m-3 md:rounded-[36px]">
-      <div className="mx-auto grid max-w-[1440px] items-center gap-10 px-5 py-16 md:px-10 md:py-20 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+      <div className="mx-auto grid max-w-[1440px] items-center gap-6 px-5 py-10 md:gap-10 md:px-10 md:py-20 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
         <Reveal>
           <p className="mono-label text-brand">Motorista parceiro</p>
-          <h2 className="display mt-3 text-[clamp(2.2rem,4.6vw,4rem)]">Quem movimenta a cidade também merece ser valorizado.</h2>
-          <ul className="mt-8 space-y-4">
+          <h2 className="display mt-3 text-[clamp(1.9rem,4.6vw,4rem)]">Quem movimenta a cidade também merece ser valorizado.</h2>
+          {/* Celular: uma frase e um cartão; a lista abaixo repete o painel azul e fica só do tablet para cima. */}
+          <p className="mt-3 text-muted md:hidden">Você vê o ganho antes de aceitar, e pode recusar.</p>
+          <p className="mt-4 rounded-2xl bg-white p-4 md:hidden" aria-label="Exemplo de oferta"><span className="mono-label block text-muted">Exemplo de oferta</span><span className="num mt-1 block text-2xl font-semibold">Você recebe R$ 21,25</span><span className="mt-0.5 block text-sm text-muted">Bruto R$ 25,00, comissão R$ 3,75</span></p>
+          <ul className="mt-6 space-y-4 max-md:hidden md:mt-8">
             {[
               ["scale", "Distribuição equilibrada", "Tempo parado e ganhos do dia contam, não só quem está mais perto."],
               ["wallet", "Ganho claro antes do aceite", "Bruto, comissão e líquido em cada oferta. Você pode recusar."],
@@ -30,12 +33,12 @@ export function DriverBand() {
               </li>
             ))}
           </ul>
-          <div className="mt-9 flex flex-wrap gap-3">
-            <Link href="/cadastro?perfil=motorista" className="btn btn-lg btn-primary">Quero dirigir <Icon name="arrow" size={18} /></Link>
-            <Link href="/motoristas#ganhos" className="btn btn-lg btn-ghost bg-white">Calcular meus ganhos</Link>
+          <div className="mt-7 flex flex-wrap gap-3 md:mt-9">
+            <Link href="/cadastro?perfil=motorista" className="btn btn-lg btn-primary max-md:w-full">Quero dirigir <Icon name="arrow" size={18} /></Link>
+            <Link href="/motoristas#ganhos" className="btn btn-lg btn-ghost bg-white max-md:hidden!">Calcular meus ganhos</Link>
           </div>
         </Reveal>
-        <Reveal delay={.1} className="relative">
+        <Reveal delay={.1} className="relative max-md:hidden">
           <OfferFlow />
         </Reveal>
       </div>

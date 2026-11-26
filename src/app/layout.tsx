@@ -5,6 +5,7 @@ import { Geist_Mono, Inter, Inter_Tight, Outfit } from "next/font/google";
 import "./globals.css";
 import { parseTheme, THEME_COOKIE } from "@/frontend/lib/theme";
 import { asset, STATIC } from "@/frontend/lib/site-mode";
+import { hostsConfig } from "@/shared/hosts";
 import { SPLASH_HEAD_SCRIPT } from "@/frontend/lib/splash";
 
 // Inter é a fonte do manual da marca (Regular, Medium, Semibold e Bold). A mono fica só para números de painel.
@@ -18,7 +19,7 @@ const round = Outfit({ display: "swap", subsets: ["latin"], variable: "--f-round
 
 export const metadata: Metadata = {
   // Endereço público do site: links e imagens de compartilhamento saem completos (APP_URL no .env).
-  metadataBase: new URL(process.env.APP_URL || "http://localhost:3000"),
+  metadataBase: new URL(hostsConfig(process.env)?.urls.www || process.env.APP_URL || "http://localhost:3000"),
   title: { default: "Orbi — Sua direção, nosso compromisso.", template: "%s · Orbi" },
   description: "Uma nova forma de fazer mobilidade. Mais respeito para quem dirige. Mais confiança para quem chega.",
   icons: { icon: asset("/icon.svg"), ...(STATIC ? {} : { apple: "/app-icon/180" }) },

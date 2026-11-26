@@ -42,6 +42,7 @@ export async function staticApi(path: string): Promise<unknown> {
   switch (url.pathname) {
     case "/api/public/tariffs": return { cities: await staticTariffs() };
     case "/api/public/pulse": return { cities: [] };
+    case "/api/public/form-stamp": return { stamp: "" };
     case "/api/public/support": return { whatsapp: process.env.NEXT_PUBLIC_WHATSAPP ?? "" };
     case "/api/geo/search": {
       const text = q.get("q")?.trim().slice(0, 120) ?? "";

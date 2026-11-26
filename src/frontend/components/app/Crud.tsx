@@ -106,13 +106,22 @@ export function Crud({ resource, columns, canWrite, canCreate = true, canDelete 
   );
 }
 
+/**
+ * No computador, tabela com rolagem lateral. No celular (abaixo de md), cada linha vira um cartão com "rótulo: valor",
+ * sem rolagem lateral. Os papéis ARIA ficam explícitos porque display:block tira a semântica de tabela em alguns leitores de tela.
+ */
 export function DataTable({ columns, rows, actions }: { columns: Col[]; rows: Row[]; actions?: (r: Row) => React.ReactNode }) {
   return (
-    <div className="card overflow-x-auto">
-      <table className="w-full min-w-max text-left text-sm">
-        <thead><tr className="border-b border-line text-muted">{columns.map((c) => <th key={c.key} scope="col" className="px-4 py-3 font-semibold">{c.label}</th>)}{actions && <th scope="col" className="px-4 py-3"><span className="sr-only">Ações</span></th>}</tr></thead>
-        <tbody className="divide-y divide-line">
-          {rows.map((r, i) => <tr key={r.id ?? i}>{columns.map((c) => <td key={c.key} className="max-w-xs px-4 py-3 align-top">{display(c, r)}</td>)}{actions && <td className="px-4 py-3">{actions(r)}</td>}</tr>)}
+    <div className="card overflow-x-auto max-md:overflow-visible max-md:!bg-transparent max-md:!shadow-none">
+      <table role="table" className="w-full text-left text-sm max-md:block md:min-w-max">
+        <thead role="rowgroup" className="max-md:sr-only"><tr role="row" className="border-b border-line text-muted">{columns.map((c) => <th role="columnheader" key={c.key} scope="col" className="px-4 py-3 font-semibold">{c.label}</th>)}{actions && <th role="columnheader" scope="col" className="px-4 py-3"><span className="sr-only">Ações</span></th>}</tr></thead>
+        <tbody role="rowgroup" className="divide-y divide-line max-md:block max-md:space-y-3 max-md:divide-y-0">
+          {rows.map((r, i) => (
+            <tr role="row" key={r.id ?? i} className="max-md:block max-md:rounded-[22px] max-md:bg-surface max-md:p-3 max-md:shadow-[0_0_0_1px_var(--line)]">
+              {columns.map((c) => <td role="cell" key={c.key} data-label={c.label} className="max-w-xs px-4 py-3 align-top max-md:flex max-md:max-w-none max-md:items-baseline max-md:justify-between max-md:gap-4 max-md:px-1 max-md:py-1.5 max-md:text-right max-md:before:shrink-0 max-md:before:text-left max-md:before:text-muted max-md:before:content-[attr(data-label)]">{display(c, r)}</td>)}
+              {actions && <td role="cell" className="px-4 py-3 max-md:block max-md:px-1 max-md:pt-2 max-md:pb-0">{actions(r)}</td>}
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>

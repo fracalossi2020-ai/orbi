@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { expect, request, type APIRequestContext, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { makeCnh, randomDigits, validCpf } from "./documents";
+import { totpAt, totpStep } from "../src/backend/security";
 
 export const BASE = "http://localhost:3100";
 export const PASSWORD = "senha-de-teste";
@@ -35,10 +36,60 @@ export async function ownAddress(page: Page) {
   await page.context().setExtraHTTPHeaders({ "x-forwarded-for": nextAddress() });
 }
 
+/**
+ * Reautenticação do painel (step-up) pela senha: o servidor principal dos testes não exige a segunda etapa da equipe, então a
+ * senha é o caminho (com a segunda etapa ativa, seria o código do aplicativo). Vale 5 minutos.
+ */
+export async function stepUpApi(c: APIRequestContext, password = ADMIN.password) {
+  const r = await c.post("/api/account/step-up", { data: { password } });
+  expect(r.ok(), await r.text()).toBeTruthy();
+}
+
+let sharedAdmin: APIRequestContext | null = null;
+/**
+ * Cliente do administrador, já reautenticado. A equipe tem no máximo 3 sessões abertas (as mais antigas caem), então todos os
+ * testes dividem uma sessão só, refeita se ela cair. A reautenticação é renovada a cada chamada.
+ */
 export async function adminApi() {
+  if (sharedAdmin && !(await sharedAdmin.get("/api/admin/me").catch(() => null))?.ok()) sharedAdmin = null;
+  if (!sharedAdmin) {
+    const c = await apiClient();
+    expect((await c.post("/api/auth/login", { data: ADMIN })).ok()).toBeTruthy();
+    sharedAdmin = c;
+  }
+  await stepUpApi(sharedAdmin);
+  return sharedAdmin;
+}
+
+/** Link do convite lido da caixa de saída local dos testes (último e-mail para o endereço). */
+export function lastInviteToken(email: string) {
+  const dir = path.join(process.cwd(), ".data-e2e", "outbox");
+  // Contas de administrador também recebem o aviso de "nova conta da equipe": vale o último e-mail que traz o link.
+  for (const file of fs.readdirSync(dir).filter((f) => f.includes(email)).sort().reverse()) {
+    const m = fs.readFileSync(path.join(dir, file), "utf8").match(/\/convite\/([A-Za-z0-9_-]{20,})/);
+    if (m) return m[1];
+  }
+  throw new Error(`Nenhum convite para ${email}`);
+}
+
+/**
+ * Cria uma conta da equipe pelo caminho real: o administrador convida, a pessoa abre o convite, escolhe a senha e ativa a
+ * segunda etapa. Devolve o cliente dela, já entrando (sessão aberta pela ativação), e os dados para entrar de novo.
+ */
+export async function createStaffApi(admin: APIRequestContext, role: "admin" | "gestor" | "atendente" = "atendente", password = "senha-da-equipe-1") {
+  const email = `${role}${unique()}@e2e.prumo.test`;
+  await stepUpApi(admin);
+  const invite = await admin.post("/api/admin/staff", { data: { name: "Ana Atendente", email, role } });
+  expect(invite.ok(), await invite.text()).toBeTruthy();
+  const token = lastInviteToken(email);
   const c = await apiClient();
-  expect((await c.post("/api/auth/login", { data: ADMIN })).ok()).toBeTruthy();
-  return c;
+  expect((await c.post("/api/auth/invite-info", { data: { token } })).ok()).toBeTruthy();
+  const start = await c.post("/api/auth/invite-start", { data: { token, password } });
+  expect(start.ok(), await start.text()).toBeTruthy();
+  const { secret } = await start.json();
+  const finish = await c.post("/api/auth/invite-finish", { data: { token, code: totpAt(secret, totpStep()) } });
+  expect(finish.ok(), await finish.text()).toBeTruthy();
+  return { c, email, password, secret, recoveryCodes: (await finish.json()).recoveryCodes as string[], userId: (await invite.json()).id as string, token };
 }
 
 export const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");

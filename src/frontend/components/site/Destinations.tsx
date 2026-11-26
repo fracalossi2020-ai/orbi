@@ -52,15 +52,15 @@ export function Destinations({ city }: { city: string }) {
   };
   return (
     <section aria-labelledby="destinos" className="relative bg-bg text-ink">
-      <div className="mx-auto max-w-[1440px] px-5 py-20 md:px-10 md:py-24">
+      <div className="mx-auto max-w-[1440px] px-5 py-12 md:px-10 md:py-24">
         <Reveal>
           <p className="mono-label text-brand">Destinos de {city}</p>
-          <h2 id="destinos" className="display mt-3 text-[clamp(2.2rem,4.8vw,4.2rem)] leading-[.95]">Para onde a cidade vai.</h2>
-          <p className="mt-4 max-w-[48ch] text-muted">Toque num lugar e ele vira o destino da sua viagem, com rota e preço estimado.</p>
+          <h2 id="destinos" className="display mt-3 text-[clamp(1.9rem,4.8vw,4.2rem)] leading-[.95]">Para onde a cidade vai.</h2>
+          <p className="mt-4 max-w-[48ch] text-muted max-md:hidden">Toque num lugar e ele vira o destino da sua viagem, com rota e preço estimado.</p>
         </Reveal>
-        <ul className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="mt-6 grid gap-3 md:mt-10 sm:grid-cols-2 lg:grid-cols-3">
           {list.map((d, i) => (
-            <Reveal as="li" key={d.label} delay={i * .05}>
+            <Reveal as="li" key={d.label} delay={i * .05} className={i >= 4 ? "max-md:hidden" : ""}>
               <button type="button" onClick={() => go(d)} className="dest-card group flex w-full items-center gap-4 rounded-[22px] bg-bg p-4 text-left shadow-[0_0_0_1px_var(--line)_inset] transition-[box-shadow,transform] hover:-translate-y-0.5 hover:shadow-[0_0_0_2px_var(--primary)_inset,0_18px_40px_-24px_rgb(0_0_0/.45)]">
                 <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-surface-2 text-brand transition-colors group-hover:bg-primary group-hover:text-on-primary"><Icon name={d.icon} size={22} weight="duotone" /></span>
                 <span className="min-w-0 flex-1">

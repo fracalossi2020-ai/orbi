@@ -65,7 +65,7 @@ export function PassengerStart({ firstName, greeting, recent, trips, places, has
     : { label: "Envios", sub: "Pacotes e documentos", img: "package", soon: true, go: () => setTab("envios") };
 
   return (
-    <div className="anim-rise mx-auto w-full max-w-xl space-y-8 px-4 pt-3 pb-32 md:pb-10" data-testid="passenger-start">
+    <div className="anim-rise mx-auto w-full max-w-xl space-y-8 px-4 pt-3 pb-[calc(var(--nav-h)+1.5rem)] md:pb-10" data-testid="passenger-start">
       {/* Abas: o que dá para fazer na Orbi. Envios e Parceiros entram em breve. */}
       <div role="tablist" aria-label="O que você quer fazer" className="-mx-4 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none]">
         {([["viagem", "Viagem", "car"], ["envios", "Envios", "package"], ["parceiros", "Parceiros", "store"]] as const).map(([id, label, img]) => (
@@ -218,7 +218,7 @@ export function PassengerStart({ firstName, greeting, recent, trips, places, has
                 </li>
               ))}
             </ul>
-            <Link href="/passageiro/ajuda" className="mt-4 inline-flex h-10 items-center gap-1.5 rounded-full bg-ink px-4 text-sm font-semibold text-bg">Central de ajuda<Icon name="arrow" size={14} /></Link>
+            <Link href="/passageiro/ajuda" className="mt-4 inline-flex h-11 items-center gap-1.5 rounded-full bg-ink md:h-10 px-4 text-sm font-semibold text-bg">Central de ajuda<Icon name="arrow" size={14} /></Link>
           </section>
 
           {online !== null && (

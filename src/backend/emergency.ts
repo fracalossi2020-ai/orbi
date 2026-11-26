@@ -9,6 +9,7 @@ import { checkRateLimit } from "./auth";
 import { SOS_THROTTLED_MESSAGE, SOS_USER_LIMIT, SOS_USER_WINDOW_MS, staffEmail, type SosActor, type SosPoint } from "@/shared/emergency";
 import { showsDriverLocation } from "@/shared/transitions";
 import { appUrl } from "@/shared/runtime-config";
+import { hostsConfig } from "@/shared/hosts";
 
 type Ride = typeof s.rides.$inferSelect;
 
@@ -102,8 +103,8 @@ export async function raiseEmergency(o: { ride: Ride; userId: string; as: SosAct
   publish(STAFF_CHANNEL, "emergency");
   if (throttled) return { ticketId: ticket.id, emergencyId: em.id, repeated: false as const, throttled: true as const, message: SOS_THROTTLED_MESSAGE };
 
-  // Links sempre a partir de APP_URL: nunca do Host do pedido, que o cliente controla.
-  const panelUrl = `${appUrl(process.env)}/admin/emergencias`;
+  // Links sempre da configuração (ADMIN_URL no modo separado, senão APP_URL): nunca do Host do pedido, que o cliente controla.
+  const panelUrl = `${(hostsConfig(process.env)?.urls.admin ?? appUrl(process.env))}/admin/emergencias`;
   const mail = staffEmail({
     rideId: ride.id, as, at: em.createdAt, panelUrl,
     points: [

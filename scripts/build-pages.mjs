@@ -21,7 +21,7 @@ const base = name ? `/${name}` : "";
 const root = process.cwd();
 
 // Tudo que precisa de servidor sai da vitrine.
-const REMOVE = ["src/app/api", "src/app/admin", "src/app/passageiro", "src/app/motorista", "src/app/v", "src/app/(auth)",
+const REMOVE = ["src/app/api", "src/app/admin", "src/app/convite", "src/app/passageiro", "src/app/motorista", "src/app/v", "src/app/(auth)", "src/app/loja", "src/app/food-logo",
   "src/app/(site)/identidade", "src/app/app-icon", "src/app/manifest.ts", "src/proxy.ts", "src/instrumentation.ts"];
 
 // Arquivos que ganham linhas só na vitrine. No servidor normal estas linhas quebrariam a página (as cidades

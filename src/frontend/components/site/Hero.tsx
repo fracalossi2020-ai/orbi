@@ -11,6 +11,7 @@ import { api, ErrorNote, km, mins } from "@/frontend/components/ui";
 import { brl, quoteFare } from "@/shared/pricing";
 import { cityOf, pulseText, usePulse, useTariffs } from "./usePublic";
 import { LiveTrip } from "./LiveTrip";
+import { useAppHref } from "./app-origin";
 import { OrbiMark } from "@/frontend/components/OrbiMark";
 import { asset, STATIC } from "@/frontend/lib/site-mode";
 
@@ -32,12 +33,15 @@ function Readout({ label, value }: { label: string; value: string }) {
  * Abertura do site: preto profundo com o arco da marca. Minimalista em repouso;
  * ao escolher um endereço, o título recolhe e o arco se abre numa janela de mapa com a rota, a distância e o preço.
  */
-export function Hero({ cities, signedIn = null, words = WORDS, eyebrow = "App de corridas · Vale do Aço · MG", lead = "A Orbi é o app de corridas do Vale do Aço. Diga para onde vai, veja o preço na hora e um motorista da região te busca. Experimente aqui embaixo, sem cadastro." }: {
+export function Hero({ cities, signedIn = null, words = WORDS, eyebrow = "App de corridas · Vale do Aço · MG", lead = "A Orbi é o app de corridas do Vale do Aço. Diga para onde vai, veja o preço na hora e um motorista da região te busca. Experimente aqui embaixo, sem cadastro.", leadShort = "Diga para onde vai e veja o preço na hora." }: {
   cities: HeroCity[]; signedIn?: string | null;
   /** Título em três linhas; a última fica com o degradê da marca. */
   words?: string[]; eyebrow?: string; lead?: string;
+  /** Frase única do celular (uma ideia por tela): a longa só aparece do tablet para cima. */
+  leadShort?: string;
 }) {
   const reduce = !!useReducedMotion();
+  const appHref = useAppHref();
   // Motorista também é passageiro: pede viagem pelo mesmo app quando está offline.
   const passenger = signedIn === "passenger" || signedIn === "driver";
   const [cityId, setCityId] = useState(cities.find((c) => c.name === "Ipatinga")?.id ?? cities[0]?.id ?? "");
@@ -163,7 +167,7 @@ export function Hero({ cities, signedIn = null, words = WORDS, eyebrow = "App de
   return (
     <section className="hero-light on-deep relative isolate overflow-hidden bg-deep text-on-deep">
 
-      <div className={`relative z-10 mx-auto grid w-full max-w-[1440px] gap-8 px-5 pt-8 pb-12 md:px-10 lg:min-h-[calc(100svh-4rem)] lg:grid-cols-[minmax(0,700px)_minmax(0,1fr)] lg:gap-12 lg:pt-10 lg:pb-12 ${traveling ? "lg:items-start" : "lg:items-center"}`}>
+      <div className={`relative z-10 mx-auto grid w-full max-w-[1440px] gap-6 px-5 pt-5 pb-8 md:gap-8 md:px-10 md:pt-8 md:pb-12 lg:min-h-[calc(100svh-4rem)] lg:grid-cols-[minmax(0,700px)_minmax(0,1fr)] lg:gap-12 lg:pt-10 lg:pb-12 ${traveling ? "lg:items-start" : "lg:items-center"}`}>
         <motion.div layout={!reduce} transition={{ layout: { duration: .8, ease: EASE } }} className="w-full">
           {/* Título: recolhe quando a pessoa escolhe um endereço */}
           <motion.div initial={false} animate={traveling ? { height: 0, opacity: 0, y: -24, filter: "blur(8px)" } : { height: "auto", opacity: 1, y: 0, filter: "blur(0px)" }}
@@ -172,13 +176,13 @@ export function Hero({ cities, signedIn = null, words = WORDS, eyebrow = "App de
               <span className="relative grid size-2 place-items-center"><span className="pulse-ring absolute size-2 rounded-full bg-[#00E1FF]" /><span className="size-1.5 rounded-full bg-[#00E1FF]" /></span>
               {eyebrow}
             </p>
-            <h1 className="display mt-7 text-[clamp(2.8rem,5.2vw,5.2rem)] leading-[.95]">
+            <h1 className="display mt-5 text-[clamp(2.8rem,5.2vw,5.2rem)] leading-[.95] max-md:text-[2.45rem] md:mt-7">
               {words.map((w, i) => (
                 <motion.span key={w} className={`block pb-[.06em] ${i === words.length - 1 ? "text-grad" : ""}`} initial={reduce ? false : { opacity: 0, y: 28, filter: "blur(6px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                   transition={{ duration: .7, delay: .15 + i * .12, ease: EASE }}>{w}</motion.span>
               ))}
             </h1>
-            <p className="mt-6 mb-8 max-w-[44ch] text-lg leading-relaxed text-on-deep-muted">{lead}</p>
+            <p className="mt-3 mb-5 max-w-[44ch] text-base leading-relaxed text-on-deep-muted md:mt-6 md:mb-8 md:text-lg"><span className="md:hidden">{leadShort}</span><span className="max-md:hidden">{lead}</span></p>
           </motion.div>
 
           <motion.form id="pedir" onSubmit={submit} className="scroll-mt-24 rounded-[28px] border border-line bg-surface-2 p-3 sm:p-4"
@@ -189,7 +193,7 @@ export function Hero({ cities, signedIn = null, words = WORDS, eyebrow = "App de
               <div className="flex items-center justify-between gap-3 px-1 pt-1 pb-3">
                 <p className="display text-2xl">{origin && dest ? "Sua rota" : dest ? "De onde você sai?" : "Para onde vamos?"}</p>
                 <button type="button" onClick={clear} tabIndex={traveling ? 0 : -1}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold text-on-deep-muted hover:bg-[color-mix(in_srgb,var(--on-deep)_10%,transparent)] hover:text-on-deep">
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold max-md:min-h-11 text-on-deep-muted hover:bg-[color-mix(in_srgb,var(--on-deep)_10%,transparent)] hover:text-on-deep">
                   <Icon name="close" size={16} /> Limpar
                 </button>
               </div>
@@ -207,8 +211,8 @@ export function Hero({ cities, signedIn = null, words = WORDS, eyebrow = "App de
               </div>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-3 px-1">
-              <button className="btn btn-lg btn-on-deep">Ver preços <Icon name="arrow" size={18} /></button>
-              {!signedIn && <Link href="/entrar?etapa=login" className="border-b border-current pb-0.5 text-sm font-semibold">Já tem conta? Entre</Link>}
+              <button className="btn btn-lg btn-on-deep max-md:w-full">Ver preços <Icon name="arrow" size={18} /></button>
+              {!signedIn && <Link href={appHref("/entrar?etapa=login")} className="relative border-b border-current pb-0.5 text-sm font-semibold after:absolute after:-inset-x-2 after:-inset-y-3.5 after:content-['']">Já tem conta? Entre</Link>}
             </div>
           </motion.form>
           {traveling && (
@@ -219,30 +223,31 @@ export function Hero({ cities, signedIn = null, words = WORDS, eyebrow = "App de
           )}
           {note && <p className="mt-3 rounded-xl bg-[color-mix(in_srgb,var(--on-deep)_6%,transparent)] px-3 py-2 text-sm text-on-deep-muted">{note}</p>}
           {error && <div className="mt-3 rounded-xl bg-surface"><ErrorNote>{error}</ErrorNote></div>}
-          {!passenger && !traveling && <p className="mt-3 text-sm text-on-deep-muted">{signedIn ? "Para pedir uma viagem, use uma conta de passageiro." : "Rota, tempo e preço estimado aparecem na hora, sem cadastro."}</p>}
+          {!passenger && !traveling && <p className="mt-3 text-sm text-on-deep-muted max-md:hidden">{signedIn ? "Para pedir uma viagem, use uma conta de passageiro." : "Rota, tempo e preço estimado aparecem na hora, sem cadastro."}</p>}
           {cities.length > 1 && !traveling && (
-            <div className="mt-7" role="group" aria-label="Escolher a cidade">
+            <div className="mt-5 max-md:hidden md:mt-7" role="group" aria-label="Escolher a cidade">
               <p className="mono-label mb-2.5 text-on-deep-muted">Sua cidade</p>
               <div className="flex flex-wrap gap-2">
                 {cities.map((c) => (
                   <button key={c.id} type="button" aria-pressed={c.id === cityId} onClick={() => setCityId(c.id)}
-                    className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${c.id === cityId ? "bg-on-deep text-deep" : "shadow-[0_0_0_1px_color-mix(in_srgb,var(--on-deep)_22%,transparent)_inset] hover:bg-[color-mix(in_srgb,var(--on-deep)_8%,transparent)]"}`}>
+                    className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors max-md:min-h-11 ${c.id === cityId ? "bg-on-deep text-deep" : "shadow-[0_0_0_1px_color-mix(in_srgb,var(--on-deep)_22%,transparent)_inset] hover:bg-[color-mix(in_srgb,var(--on-deep)_8%,transparent)]"}`}>
                     {c.name}
                   </button>
                 ))}
               </div>
-              {city?.slug && <Link href={`/cidades/${city.slug}`} className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-on-deep-muted underline-offset-4 hover:text-on-deep hover:underline">Tarifas e destinos de {city.name} <Icon name="arrow" size={16} /></Link>}
+              {city?.slug && <Link href={`/cidades/${city.slug}`} className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-on-deep-muted underline-offset-4 max-md:min-h-11 hover:text-on-deep hover:underline">Tarifas e destinos de {city.name} <Icon name="arrow" size={16} /></Link>}
             </div>
           )}
         </motion.div>
 
         {/* Lado direito: em repouso, só a arte e o pulso da cidade; com endereço, a janela do mapa */}
-        <div className="relative min-h-0 lg:h-[calc(100svh-11rem)] lg:self-center">
+        <div className={`relative min-h-0 lg:h-[calc(100svh-11rem)] lg:self-center ${traveling ? "" : "max-md:hidden"}`}>
           {/* Em repouso: a corrida pedida acontecendo no celular, com o símbolo da Orbi atrás */}
           {!traveling && (
-            <div className="relative grid place-items-center py-4 lg:h-full lg:py-0">
-              <OrbiMark size={560} className="hero-mark absolute max-w-[110%]" gid="hero-mark" />
-              <LiveTrip className="relative origin-center scale-[.88] sm:scale-100" />
+            <div className="relative grid place-items-center py-2 sm:py-4 lg:h-full lg:py-0">
+              <OrbiMark size={560} className="hero-mark absolute max-w-[78%] sm:max-w-[110%]" gid="hero-mark" />
+              {/* Celular: a ilustração encolhe (68%) e a caixa acompanha, para não ocupar a tela inteira. */}
+              <div className="h-[402px] w-full sm:h-auto"><LiveTrip className="relative origin-top scale-[.68] sm:origin-center sm:scale-100" /></div>
             </div>
           )}
           <AnimatePresence>

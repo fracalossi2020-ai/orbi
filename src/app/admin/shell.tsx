@@ -7,6 +7,7 @@ import { Icon } from "@/frontend/components/Icon";
 import { api, ThemeToggle } from "@/frontend/components/ui";
 import { can, type Resource, type Role } from "@/shared/permissions";
 import { MfaSetup } from "@/frontend/components/app/SecurityPanel";
+import { StepUpModal } from "@/frontend/components/app/StepUpModal";
 
 export const ADMIN_NAV: { href: string; label: string; icon: string; res: Resource; group: string }[] = [
   { href: "/admin", label: "Indicadores", icon: "chart", res: "dashboard", group: "Operação" },
@@ -23,6 +24,8 @@ export const ADMIN_NAV: { href: string; label: string; icon: string; res: Resour
   { href: "/admin/cupons", label: "Cupons", icon: "ticket", res: "coupons", group: "Crescimento" },
   { href: "/admin/campanhas", label: "Campanhas", icon: "megaphone", res: "campaigns", group: "Crescimento" },
   { href: "/admin/parceiros", label: "Parceiros", icon: "store", res: "partners", group: "Crescimento" },
+  // Orbi Food (demonstração): o item só aparece com PRUMO_FOOD_DEMO=true (prop `food` do layout).
+  { href: "/admin/food", label: "Orbi Food", icon: "package", res: "food", group: "Crescimento" },
   { href: "/admin/interessados", label: "Interessados", icon: "doc", res: "leads", group: "Crescimento" },
   { href: "/admin/regioes", label: "Regiões", icon: "map", res: "regions", group: "Plataforma" },
   { href: "/admin/modalidades", label: "Modalidades", icon: "moto", res: "modalities", group: "Plataforma" },
@@ -36,11 +39,11 @@ const RoleCtx = createContext<Role>("atendente");
 export const useRole = () => useContext(RoleCtx);
 const ROLE_LABEL: Record<string, string> = { admin: "Administrador", gestor: "Gestor", atendente: "Atendente" };
 
-export function AdminShell({ role, mfaReady = true, children }: { role: Role; mfaReady?: boolean; children: React.ReactNode }) {
+export function AdminShell({ role, mfaReady = true, loginHref = "/entrar", food = false, children }: { role: Role; mfaReady?: boolean; loginHref?: string; food?: boolean; children: React.ReactNode }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
-  const items = ADMIN_NAV.filter((n) => can(role, n.res, "read"));
-  const logout = async () => { await api("/api/auth/logout", { body: {} }); window.location.href = "/entrar"; };
+  const items = ADMIN_NAV.filter((n) => can(role, n.res, "read") && (food || n.res !== "food"));
+  const logout = async () => { await api("/api/auth/logout", { body: {} }); window.location.href = loginHref; };
   const nav = (
     <nav aria-label="Administração" className="space-y-5">
       {GROUPS.map((g) => {
@@ -61,15 +64,16 @@ export function AdminShell({ role, mfaReady = true, children }: { role: Role; mf
   );
   return (
     <RoleCtx.Provider value={role}>
+      <StepUpModal />
       <div className="min-h-svh bg-bg lg:grid lg:grid-cols-[250px_1fr]">
         <aside className="on-deep sticky top-0 hidden h-svh overflow-auto bg-deep p-4 text-on-deep lg:block">
           <Link href="/admin" className="mb-6 block px-2"><Logo size={22} /></Link>
           {nav}
         </aside>
         <div className="min-w-0">
-          <header className="glass sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line px-3 md:px-6">
+          <header className="glass max-md:bg-surface! sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line px-3 md:px-6">
             <button type="button" className="grid size-11 place-items-center lg:hidden" aria-label="Abrir menu" aria-expanded={open} onClick={() => setOpen(!open)}><Icon name={open ? "close" : "menu"} /></button>
-            <Link href="/admin" className="mr-auto ml-1 lg:hidden" aria-label="Orbi, painel"><Logo size={20} hole="var(--surface)" /></Link>
+            <Link href="/admin" className="mr-auto ml-1 flex min-h-11 items-center lg:hidden" aria-label="Orbi, painel"><Logo size={20} hole="var(--surface)" /></Link>
             <span className="hidden text-sm text-muted lg:block">Perfil: <strong className="text-ink">{ROLE_LABEL[role]}</strong></span>
             <div className="flex items-center"><ThemeToggle /><Link href="/admin/seguranca" aria-label="Minha segurança" title="Minha segurança" className="grid size-11 place-items-center rounded-full hover:bg-surface-2"><Icon name="lock" size={20} /></Link><button type="button" onClick={logout} aria-label="Sair" className="grid size-11 place-items-center rounded-full hover:bg-surface-2"><Icon name="logout" size={20} /></button></div>
           </header>

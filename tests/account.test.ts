@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ALREADY_DRIVER, becomeDriverProblem, CPF_NOT_ACCOUNT, normalizeIdentifier, OFFLINE_TO_REQUEST, onboardingCpfProblem, rideForExport, rideRequestProblem, staffUserView, STAFF_CANNOT_DRIVE } from "@/shared/account";
+import { ALREADY_DRIVER, becomeDriverProblem, CPF_NOT_ACCOUNT, normalizeIdentifier, OFFLINE_TO_REQUEST, onboardingCpfProblem, rideForExport, rideRequestProblem, staffUserView, canSeeFullPii, maskCnhValue, maskCpfValue, STAFF_CANNOT_DRIVE } from "@/shared/account";
 
 describe("virar motorista", () => {
   it("passageiro pode", () => {
@@ -64,7 +64,20 @@ describe("cópia dos dados (LGPD) e visão da equipe", () => {
   });
   it("lista da equipe sem segredos", () => {
     const u = { id: "1", name: "A", passwordHash: "x", totpSecret: "y", totpLastStep: 1, recoveryCodes: ["z"], googleSub: "g", pendingEmail: "n@x.com", email: "a@x.com" };
-    expect(staffUserView(u)).toEqual({ id: "1", name: "A", email: "a@x.com" });
+    expect(staffUserView(u)).toEqual({ id: "1", name: "A", email: "a@x.com", piiMasked: true });
+  });
+  it("CPF mascarado por padrão e inteiro só para quem pode (A9)", () => {
+    const u = { id: "1", cpf: "52998224725" };
+    expect(staffUserView(u).cpf).toBe("***.982.247-**");
+    expect(staffUserView(u, true).cpf).toBe("52998224725");
+    expect(staffUserView(u, true).piiMasked).toBe(false);
+    expect(maskCpfValue("529.982.247-25")).toBe("***.982.247-**");
+    expect(maskCpfValue(null)).toBeNull();
+    expect(maskCnhValue("12345678900")).toBe("********900");
+    expect(maskCnhValue(null)).toBeNull();
+    expect(canSeeFullPii("admin")).toBe(true);
+    expect(canSeeFullPii("gestor")).toBe(true);
+    expect(canSeeFullPii("atendente")).toBe(false);
   });
 });
 

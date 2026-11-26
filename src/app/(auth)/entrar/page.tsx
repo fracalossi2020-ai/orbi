@@ -5,6 +5,7 @@ import { Suspense, useEffect, useState } from "react";
 import { Icon } from "@/frontend/components/Icon";
 import { OrbiMark } from "@/frontend/components/OrbiMark";
 import { api, ErrorNote, Note, ThemeToggle, useAction } from "@/frontend/components/ui";
+import { useBotGuard } from "@/frontend/components/BotGuard";
 import { skipNextSplash } from "@/frontend/lib/splash";
 import { isReturning, markReturning } from "@/frontend/lib/visitor";
 import { isFullName, isValidCpf, isValidEmailFormat, onlyDigits } from "@/shared/validation";
@@ -109,7 +110,6 @@ function Flow() {
   const [contactEmail, setContactEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
-  const [sentTo, setSentTo] = useState("");
   const [name, setName] = useState("");
   const [cpf, setCpf] = useState("");
   const [accept, setAccept] = useState(false);
@@ -121,6 +121,7 @@ function Flow() {
   const [google, setGoogle] = useState<{ enabled: boolean; pending: { name: string; email: string } | null } | null>(null);
   const googleReason = params.get("google");
   const { busy, error, run, setError } = useAction();
+  const bot = useBotGuard();
 
   // Conta nova pelo Google volta aqui para concluir; o status também diz se a entrada com Google está ligada.
   useEffect(() => {
@@ -228,8 +229,7 @@ function Flow() {
     if (!p) { setError("Digite seu celular ou e-mail acima para receber o código."); return; }
     keepWho(p);
     run(async () => {
-      const r = await api<{ sentTo: string }>("/api/auth/reset-request", { body: { identifier: p.id } });
-      setSentTo(r.sentTo);
+      await api("/api/auth/reset-request", { body: { identifier: p.id } });
       setCode("");
       go("reset");
     });
@@ -247,8 +247,7 @@ function Flow() {
   });
 
   const requestReset = () => run(async () => {
-    const r = await api<{ sentTo: string }>("/api/auth/reset-request", { body: { identifier } });
-    setSentTo(r.sentTo);
+    await api("/api/auth/reset-request", { body: { identifier } });
     setCode("");
     if (step !== "reset") go("reset");
   });
@@ -284,7 +283,7 @@ function Flow() {
   // Toda conta nasce passageiro: virar motorista é um passo dentro da conta.
   const submitRegister = () => run(async () => {
     const u = await api<{ role: string }>("/api/auth/register", {
-      body: { name, password, cpf, acceptPrivacy: accept || undefined, ...(useEmail ? { email: identifier } : { phone: identifier, email: contactEmail.trim() }) },
+      body: { name, password, cpf, acceptPrivacy: accept || undefined, ...bot.values, ...(useEmail ? { email: identifier } : { phone: identifier, email: contactEmail.trim() }) },
     });
     finish(u.role);
   });
@@ -421,11 +420,11 @@ function Flow() {
           </div>
         )}
         <button className="btn btn-primary btn-lg mt-3 w-full" disabled={busy}>{busy ? "Verificando…" : "Continuar"}</button>
-        <button type="button" className="mt-4 w-full py-2 text-sm font-semibold underline" onClick={() => { setError(null); setExisting(false); setUseEmail(!useEmail); }}>{useEmail ? "Usar celular" : "Usar e-mail"}</button>
+        <button type="button" className="mt-4 min-h-11 w-full py-2 text-sm font-semibold underline" onClick={() => { setError(null); setExisting(false); setUseEmail(!useEmail); }}>{useEmail ? "Usar celular" : "Usar e-mail"}</button>
         {signup && socials}
         {signup && (
           <p className="mt-6 text-center text-[15px] text-[#536071] [[data-theme=dark]_&]:text-[#95A2B6]">
-            Já tem conta? <button type="button" className="font-semibold text-[#0356C5] underline-offset-4 hover:underline [[data-theme=dark]_&]:text-[#6AA8FF]" onClick={toLogin}>Entrar</button>
+            Já tem conta? <button type="button" className="relative font-semibold text-[#0356C5] underline-offset-4 after:absolute after:-inset-x-2 after:-inset-y-3.5 after:content-[''] hover:underline [[data-theme=dark]_&]:text-[#6AA8FF]" onClick={toLogin}>Entrar</button>
           </p>
         )}
       </form>
@@ -467,7 +466,7 @@ function Flow() {
       <form className="anim-rise" onSubmit={(e) => { e.preventDefault(); submitReset(); }}>
         {back}
         <h1 className="display text-4xl">Crie uma nova senha</h1>
-        <p className="mt-2 text-muted">Enviamos um código de 6 dígitos para <strong className="text-ink">{sentTo}</strong>. Ele vale por 15 minutos.</p>
+        <p className="mt-2 text-muted">Se existir uma conta com esse dado, enviamos um código de 6 dígitos para o e-mail dela. Ele vale por 15 minutos.</p>
         <label className="mt-6 block">
           <span className="mb-1.5 block text-sm font-semibold">Código</span>
           <input className="input num text-lg tracking-[.3em]" name="code" inputMode="numeric" autoComplete="one-time-code" autoFocus required maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} />
@@ -549,6 +548,7 @@ function Flow() {
   } else {
     content = (
       <form className="anim-rise" onSubmit={(e) => { e.preventDefault(); submitRegister(); }}>
+        {bot.field}
         {back}
         {progress}
         <h1 className="display text-4xl">Crie uma senha</h1>
@@ -572,7 +572,7 @@ function Flow() {
       <span aria-hidden="true" className="ag-sphere top-[21%] -right-14 size-28" />
       <span aria-hidden="true" className="ag-sphere -bottom-24 -left-20 size-52" />
       <span aria-hidden="true" className="ag-sphere -right-28 -bottom-28 size-72" />
-      <header className="relative z-10 flex items-center justify-between px-4 pt-4">
+      <header className="relative z-10 flex items-center justify-between px-4 pt-[max(1rem,env(safe-area-inset-top))]">
         <span />
         <ThemeToggle className="ag-glass size-12 !rounded-2xl" />
       </header>
@@ -582,9 +582,9 @@ function Flow() {
           <span>Para dirigir, primeiro crie sua conta de passageiro. Depois é só pedir para ser motorista. <Link href="/motoristas/requisitos" className="font-semibold underline">Ver requisitos</Link></span>
         </p>
       )}
-      <main className="relative z-10 flex flex-1 flex-col justify-center px-5 pt-2 pb-10">
+      <main className="relative z-10 flex flex-1 flex-col justify-center px-5 pt-2 pb-[max(2.5rem,env(safe-area-inset-bottom))]">
         <div className="mx-auto w-full max-w-[420px]">
-          {!welcome && <span role="img" aria-label="Orbi" className="ag-glass mx-auto mb-6 grid size-24 place-items-center rounded-[30px]"><OrbiMark size={56} gid="entrar-mark" /></span>}
+          {!welcome && <span role="img" aria-label="Orbi" className="ag-glass mx-auto mb-6 grid size-24 place-items-center rounded-[30px] [@media(max-height:640px)]:hidden"><OrbiMark size={56} gid="entrar-mark" /></span>}
           {content}
         </div>
       </main>

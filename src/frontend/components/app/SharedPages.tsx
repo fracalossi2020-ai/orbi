@@ -147,6 +147,33 @@ function EmailCard({ email, pendingEmail, verified, viaGoogle, onDone }: { email
 export type AccountUser = { name: string; email: string | null; pendingEmail?: string | null; viaGoogle?: boolean; emailVerified: boolean; phone: string | null; rating: number | null; ratingCount: number };
 
 /** hero: troca o título e o cartão do nome por um topo próprio (o passageiro usa um topo com atalhos). */
+/** Baixar a cópia dos dados (LGPD): pede a senha de novo (conta do Google: código no e-mail), como o saque e a exclusão. */
+function ExportData() {
+  const [open, setOpen] = useState(false);
+  const reauth = useReauth();
+  const { busy, error, run } = useAction();
+  const download = () => run(async () => {
+    const data = await api("/api/me/export", { body: reauth.payload });
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = "meus-dados-orbi.json"; a.click();
+    URL.revokeObjectURL(url);
+    reauth.clear(); setOpen(false);
+  });
+  if (!open) return <button type="button" className="btn btn-soft" onClick={() => setOpen(true)}>Baixar meus dados</button>;
+  return (
+    <div className="space-y-2" data-testid="export-confirm">
+      <Note>A cópia tem todos os seus dados pessoais. Confirme que é você para baixar.</Note>
+      {reauth.field}
+      <ErrorNote>{error}</ErrorNote>
+      <div className="flex gap-2">
+        <button type="button" className="btn btn-primary" disabled={busy || !reauth.filled} onClick={download}>{busy ? "Preparando…" : "Baixar"}</button>
+        <button type="button" className="btn btn-ghost" onClick={() => { reauth.clear(); setOpen(false); }}>Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
 export function AccountPage({ children, hero }: { children?: React.ReactNode; hero?: (u: AccountUser) => React.ReactNode } = {}) {
   const { data, reload } = useLive<{ user: AccountUser | null }>("/api/me", { live: false });
   const { busy, error, run } = useAction();
@@ -169,7 +196,7 @@ export function AccountPage({ children, hero }: { children?: React.ReactNode; he
           <section className="card space-y-3 p-5">
             <h2 className="display text-xl">Seus dados (LGPD)</h2>
             <p className="text-sm text-muted">Baixe uma cópia completa ou exclua sua conta. Registros financeiros e de viagem ficam retidos sem identificação pelo prazo legal.</p>
-            <a href="/api/me/export" className="btn btn-soft">Baixar meus dados</a>
+            <ExportData />
             {!confirming
               ? <button type="button" className="btn btn-ghost block text-danger" onClick={() => setConfirming(true)}>Excluir minha conta</button>
               : (

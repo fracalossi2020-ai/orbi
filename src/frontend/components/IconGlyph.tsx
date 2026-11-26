@@ -12,7 +12,9 @@ import type { ReactNode } from "react";
  */
 export type GlyphName =
   | "car" | "receipt" | "chat" | "user" | "users" | "home" | "work" | "clock" | "star" | "calendar" | "shield"
-  | "package" | "store" | "map" | "pin" | "moto" | "sos" | "card" | "lock";
+  | "package" | "store" | "map" | "pin" | "moto" | "sos" | "card" | "lock"
+  // Orbi Food (demonstração): a aba e as categorias
+  | "food" | "pizza" | "burger" | "bowl" | "cup" | "sushi" | "bread" | "skewer";
 export type GlyphTone = "brand" | "quiet" | "glass";
 
 const C = "currentColor";
@@ -109,6 +111,45 @@ function shapes(filled: boolean): Record<GlyphName, ReactNode> {
       <path {...line} d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" />
       <circle cx="12" cy="15" r="1.4" fill={cut} stroke="none" />
     </>),
+    food: (<>
+      <path {...main} d="M4 16.4a8 8 0 0 1 16 0z" />
+      <path {...line} d="M2.8 19.4h18.4M12 8.4V6.6" />
+      <path {...det} d="M8.4 13.6a3.9 3.9 0 0 1 2.4-2" />
+    </>),
+    pizza: (<>
+      <path {...main} d="M12 20.6 4.4 7.4a15.5 15.5 0 0 1 15.2 0z" />
+      <path {...det} d="M10.4 10.6h.01M13.8 11.4h.01M12 15h.01" strokeWidth="2.4" />
+    </>),
+    burger: (<>
+      <path {...main} d="M4.4 11a7.6 6 0 0 1 15.2 0z" />
+      <path {...line} d="M3.6 14.2h16.8" />
+      <path {...main} d="M4.6 16.8h14.8v.4a2.4 2.4 0 0 1-2.4 2.4H7a2.4 2.4 0 0 1-2.4-2.4z" />
+      <path {...det} d="M9 8.4h.01M12.6 7.6h.01M15.4 9h.01" strokeWidth="2.2" />
+    </>),
+    bowl: (<>
+      <path {...main} d="M3.4 11.2h17.2c0 4.4-3.8 8-8.6 8s-8.6-3.6-8.6-8z" />
+      <path {...line} d="M8.4 21.2h7.2M9 8.2c-1-1 1-2 0-3.4M13.4 8.2c-1-1 1-2 0-3.4" />
+    </>),
+    cup: (<>
+      <path {...main} d="M6 9.4h12l-1.4 9.2a1.6 1.6 0 0 1-1.6 1.4H9a1.6 1.6 0 0 1-1.6-1.4z" />
+      <path {...main} d="M5.4 9.4a6.6 4.4 0 0 1 13.2 0z" />
+      <path {...det} d="M8.6 14.4h6.8" />
+    </>),
+    sushi: (<>
+      <path {...main} d="M4 10.6v4c0 2.2 3.6 4 8 4s8-1.8 8-4v-4z" />
+      <ellipse {...main} cx="12" cy="10.6" rx="8" ry="4" />
+      <ellipse {...det} cx="12" cy="10.6" rx="3" ry="1.3" />
+    </>),
+    bread: (<>
+      <path {...main} d="M4 13c0-3.6 3.6-6.5 8-6.5s8 2.9 8 6.5v5.2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" />
+      <path {...det} d="m8.6 10.2 1.4 2.6M12.6 9.6 14 12.2M16.2 10.6l.6 1.6" />
+    </>),
+    skewer: (<g transform="rotate(-45 12 12)">
+      <path {...line} d="M2.8 12h18.4" />
+      <rect {...main} x="5.4" y="9.2" width="3.9" height="5.6" rx="1.3" />
+      <rect {...main} x="10" y="9.2" width="3.9" height="5.6" rx="1.3" />
+      <rect {...main} x="14.6" y="9.2" width="3.9" height="5.6" rx="1.3" />
+    </g>),
   };
 }
 

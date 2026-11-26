@@ -110,8 +110,16 @@ describe("permissões", () => {
     expect(can("atendente", "tariffs", "read")).toBe(false);
     expect(can("atendente", "users", "write")).toBe(false);
   });
-  it("gestor configura tarifas mas não gerencia equipe", () => {
-    expect(can("gestor", "tariffs", "write")).toBe(true);
+  it("gestor só lê tarifas e planos (só o administrador altera comissão e preços) e não gerencia equipe", () => {
+    expect(can("gestor", "tariffs", "read")).toBe(true);
+    expect(can("gestor", "plans", "read")).toBe(true);
+    expect(can("gestor", "tariffs", "write")).toBe(false);
+    expect(can("gestor", "plans", "write")).toBe(false);
+    expect(can("admin", "tariffs", "write")).toBe(true);
+    expect(can("admin", "plans", "write")).toBe(true);
+    // o resto continua com o gestor
+    expect(can("gestor", "coupons", "write")).toBe(true);
+    expect(can("gestor", "regions", "write")).toBe(true);
     expect(can("gestor", "staff", "write")).toBe(false);
   });
   it("passageiro e motorista não entram no painel", () => {

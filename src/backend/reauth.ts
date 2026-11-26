@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ApiError } from "./api";
 import { verifyPassword, type SessionUser } from "./auth";
-import { isRateLimited, rateLimit, resetLimit } from "./security";
+import { isRateLimitedDb, rateLimitDb, resetLimitDb } from "./rate-limit-db";
 import { sendCode, useCode } from "./codes";
 
 /**
@@ -30,17 +30,17 @@ export async function sendReauthCode(user: SessionUser) {
  */
 export async function requireReauth(user: SessionUser, input: ReauthInput) {
   const key = `reauth:${user.id}`;
-  if (isRateLimited(key, 5)) throw new ApiError(429, "Muitas tentativas. Aguarde 15 minutos.");
-  const fail = (message: string, code?: string): never => {
-    rateLimit(key, 5);
+  if (await isRateLimitedDb(key, 5)) throw new ApiError(429, "Muitas tentativas. Aguarde 15 minutos.");
+  const fail = async (message: string, code?: string): Promise<never> => {
+    await rateLimitDb(key, 5);
     throw new ApiError(400, message, code);
   };
   if (viaEmail(user)) {
     if (!input.code) throw new ApiError(400, "Peça o código de confirmação e digite-o aqui.", "reauth_code");
-    try { await useCode(user.id, "reauth", input.code); } catch (e) { rateLimit(key, 5); throw e; }
+    try { await useCode(user.id, "reauth", input.code); } catch (e) { await rateLimitDb(key, 5); throw e; }
   } else {
     if (!input.password) throw new ApiError(400, "Informe sua senha atual para continuar.", "reauth_password");
-    if (!(await verifyPassword(input.password, user.passwordHash))) fail("A senha atual não confere.");
+    if (!(await verifyPassword(input.password, user.passwordHash))) await fail("A senha atual não confere.");
   }
-  resetLimit(key);
+  await resetLimitDb(key);
 }

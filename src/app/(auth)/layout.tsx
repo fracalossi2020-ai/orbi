@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import AppSplash from "@/frontend/components/app/AppSplash";
 import { currentUser } from "@/backend/auth";
+import { linkTo } from "@/backend/host";
 
 export default async function AuthLayout({ children }: { children: React.ReactNode }) {
   // Quem já entrou abre direto na própria tela, como em um aplicativo.
@@ -9,7 +10,7 @@ export default async function AuthLayout({ children }: { children: React.ReactNo
   const user = await currentUser();
   if (user) {
     const forDriver = (await headers()).get("x-perfil") === "motorista";
-    redirect(user.role === "driver" ? "/motorista" : user.role === "passenger" ? (forDriver ? "/passageiro/dirigir" : "/passageiro") : "/admin");
+    redirect(user.role === "driver" ? "/motorista" : user.role === "passenger" ? (forDriver ? "/passageiro/dirigir" : "/passageiro") : linkTo("admin", "/admin"));
   }
   // A tela de entrada monta o próprio layout (painel com a animação e o formulário); aqui fica só a abertura.
   return (

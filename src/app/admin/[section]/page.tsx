@@ -111,6 +111,9 @@ function Drivers() {
   const { data, loading, reload } = useLive<{ rows: Row[] }>("/api/admin/drivers");
   const { error, busy, run } = useAction();
   const post = (url: string, body: unknown) => run(async () => { await api(url, { body }); reload(); });
+  // Atendente vê CPF e CNH mascarados; "Revelar" mostra inteiros e fica no histórico (user.cpf_view).
+  const [revealed, setRevealed] = useState<Record<string, { cpf: string | null; cnh: string | null }>>({});
+  const reveal = (id: string) => run(async () => { const r = await api<{ cpf: string | null; cnh: string | null }>(`/api/admin/pii/${id}`, { body: {} }); setRevealed((m) => ({ ...m, [id]: r })); });
   if (loading && !data) return <Spinner />;
   return (
     <>
@@ -121,7 +124,7 @@ function Drivers() {
           {data.rows.map((d) => (
             <li key={d.id} className="card p-5" data-testid="driver-row">
               <div className="flex flex-wrap items-center gap-2"><p className="display text-xl">{d.name}</p><Badge tone={DRIVER_TONE[d.status]}>{DRIVER_LABEL[d.status]}</Badge>{d.online && <Badge tone="brand">Online</Badge>}</div>
-              <p className="num text-sm text-muted">{[d.email, d.phone].filter(Boolean).join(" · ")} · CPF {d.cpf} · CNH {d.cnh} · {d.ridesTotal} corridas{d.rating ? ` · ★ ${d.rating.toFixed(1)}` : ""}</p>
+              <p className="num text-sm text-muted">{[d.email, d.phone].filter(Boolean).join(" · ")} · CPF {revealed[d.id]?.cpf ?? d.cpf} · CNH {revealed[d.id] ? revealed[d.id].cnh : d.cnh}{d.piiMasked && !revealed[d.id] && <> <button type="button" className="underline" disabled={busy} onClick={() => reveal(d.id)}>Revelar</button></>} · {d.ridesTotal} corridas{d.rating ? ` · ★ ${d.rating.toFixed(1)}` : ""}</p>
               {d.address && <p className="text-sm text-muted">{d.address} {d.addressVerified ? "· CEP confirmado" : "· CEP não confirmado"}</p>}
               <p className="num text-sm text-muted">Nascimento {br(d.birthDate)} · CNH categoria {String(d.cnhCategory ?? "—")}, habilitado desde {br(d.cnhFirstLicenseAt)}, validade {br(d.cnhExpiresAt)} · EAR {d.cnhEar ? "declarada" : "não declarada"} · INSS {d.inss ? "declarado" : "não declarado"} · Termo {d.termsAcceptedAt ? `aceito (versão ${String(d.termsVersion)})` : "não aceito"}</p>
               <p className="text-xs text-muted">O sistema confere o cálculo do CPF e da CNH. Compare nome, números, categoria, validade e a observação EAR com a CNH, e confira a certidão de antecedentes, antes de aprovar.</p>
@@ -130,7 +133,7 @@ function Drivers() {
                   {!(d.docs as Row[]).length && <p className="text-sm text-muted">Nenhum enviado.</p>}
                   <ul className="space-y-1.5">{(d.docs as Row[]).map((doc) => (
                     <li key={doc.id} className="flex flex-wrap items-center gap-2 text-sm">
-                      <a className="font-medium underline" target="_blank" rel="noreferrer" href={`/api/admin/documents/${doc.id}/file`}>{DOC_LABEL[doc.kind] ?? doc.kind}</a>
+                      <a className="inline-flex min-h-11 items-center font-medium underline md:min-h-0" target="_blank" rel="noreferrer" href={`/api/admin/documents/${doc.id}/file`}>{DOC_LABEL[doc.kind] ?? doc.kind}</a>
                       <Badge tone={DRIVER_TONE[doc.status]}>{REVIEW_LABEL[doc.status]}</Badge>
                       {write && doc.status === "pending" && <>
                         <button type="button" className="btn btn-soft btn-sm !min-h-8" disabled={busy} onClick={() => post(`/api/admin/documents/${doc.id}`, { status: "approved" })}>Aprovar</button>
@@ -506,17 +509,19 @@ function Settings() {
 
 function Staff() {
   const { data, reload } = useLive<{ rows: Row[] }>("/api/admin/users", { live: false });
-  const [f, setF] = useState({ name: "", email: "", password: "", role: "atendente" });
+  const [f, setF] = useState({ name: "", email: "", role: "atendente" });
+  const [sent, setSent] = useState<string | null>(null);
   const { busy, error, run } = useAction();
   const rows = data?.rows.filter((u) => ["admin", "gestor", "atendente"].includes(u.role)) ?? [];
   return <><PageTitle sub="Atendente trata chamados. Gestor opera tudo, menos a equipe. Administrador tem acesso total.">Equipe</PageTitle>
-    <form className="card mb-4 grid gap-3 p-5 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); run(async () => { await api("/api/admin/staff", { body: f }); setF({ name: "", email: "", password: "", role: "atendente" }); reload(); }); }}>
+    <form className="card mb-4 grid gap-3 p-5 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); run(async () => { await api("/api/admin/staff", { body: f }); setSent(f.email); setF({ name: "", email: "", role: "atendente" }); reload(); }); }}>
       <Field label="Nome"><input className="input" required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
       <Field label="E-mail"><input className="input" type="email" required value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
-      <Field label="Senha inicial" hint="Pelo menos 10 caracteres."><input className="input" type="password" autoComplete="new-password" required value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field>
       <Field label="Nível de acesso"><select className="input" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}><option value="atendente">Atendente</option><option value="gestor">Gestor</option><option value="admin">Administrador</option></select></Field>
+      <p className="text-sm text-muted sm:col-span-2">A pessoa recebe um convite por e-mail (vale 24 horas, uso único), escolhe a própria senha e ativa a verificação em duas etapas. Sem ativar nesse prazo, a conta é suspensa.</p>
       <div className="sm:col-span-2"><ErrorNote>{error}</ErrorNote></div>
-      <button className="btn btn-primary sm:w-fit" disabled={busy}>Adicionar à equipe</button>
+      {sent && <p className="text-sm text-ok sm:col-span-2" role="status">Convite enviado para {sent}.</p>}
+      <button className="btn btn-primary sm:w-fit" disabled={busy}>Enviar convite</button>
     </form>
     {rows.length > 0 && <DataTable rows={rows} columns={[{ key: "name", label: "Nome" }, { key: "email", label: "E-mail" }, { key: "role", label: "Nível", render: (r) => ROLE_LABEL[r.role] }]} />}
   </>;

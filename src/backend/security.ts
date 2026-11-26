@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
-import { proxyHops } from "@/shared/runtime-config";
+import { rawClientIp, UNKNOWN_IP } from "@/shared/client-ip";
+import type { Env } from "@/shared/runtime-config";
 
 /**
  * Peças de segurança usadas pela API: IP real de quem acessa, limite de tentativas, senha forte,
@@ -9,10 +10,7 @@ import { proxyHops } from "@/shared/runtime-config";
 
 // ------------------------------------------------------------------ IP de quem acessa
 
-/** Valor usado como "IP" quando não há como saber o endereço real com segurança: todos caem no mesmo limite. */
-export const UNKNOWN_IP = "ip-desconhecido";
-
-type IpEnv = { NODE_ENV?: string; TRUST_PROXY_HOPS?: string; TRUST_X_REAL_IP?: string };
+export { UNKNOWN_IP };
 
 /**
  * Chave de limite para um IP: IPv4 fica como está; IPv6 vira o prefixo /64 (quem tem um bloco IPv6 recebe milhões de
@@ -43,15 +41,8 @@ export function ipLimitKey(raw: string): string {
  * o padrão é 1 proxy (desenvolvimento, túnel do celular e testes). O resultado já vem pronto para chave de limite
  * (IPv6 agrupado em /64, veja ipLimitKey).
  */
-export function resolveClientIp(h: Headers, env: IpEnv = process.env): string {
-  const production = env.NODE_ENV === "production";
-  const hops = proxyHops(env);
-  if (production && hops === null) return UNKNOWN_IP;
-  const real = h.get("x-real-ip");
-  if (real && env.TRUST_X_REAL_IP === "true" && real.trim()) return ipLimitKey(real);
-  const list = (h.get("x-forwarded-for") ?? "").split(",").map((x) => x.trim()).filter(Boolean);
-  if (!list.length) return production ? UNKNOWN_IP : "local";
-  return ipLimitKey(list[Math.max(0, list.length - (hops ?? 1))]);
+export function resolveClientIp(h: Headers, env: Env = process.env): string {
+  return ipLimitKey(rawClientIp(h, env));
 }
 
 let warnedProxy = false;

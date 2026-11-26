@@ -2,17 +2,20 @@
 import Link from "next/link";
 import { useState } from "react";
 import { api, ErrorNote, Field, useAction } from "@/frontend/components/ui";
+import { useBotGuard } from "@/frontend/components/BotGuard";
 
 export function LeadForm({ kind, cta, askCity = true, messageLabel = "Mensagem" }: { kind: "passageiro" | "motorista" | "parceiro" | "contato"; cta: string; askCity?: boolean; messageLabel?: string }) {
   const [f, setF] = useState({ name: "", email: "", phone: "", city: "", message: "", consent: false });
   const [sent, setSent] = useState(false);
   const { busy, error, run } = useAction();
+  const bot = useBotGuard();
   const set = (k: string, v: string | boolean) => setF((p) => ({ ...p, [k]: v }));
   if (sent) {
     return <p role="status" className="card anim-rise p-6 font-medium">Recebemos sua mensagem. Vamos responder pelo e-mail informado.</p>;
   }
   return (
-    <form className="card space-y-4 p-5 md:p-7" onSubmit={(e) => { e.preventDefault(); run(async () => { await api("/api/public/leads", { body: { kind, ...f } }); setSent(true); }); }}>
+    <form className="card space-y-4 p-5 md:p-7" onSubmit={(e) => { e.preventDefault(); run(async () => { await api("/api/public/leads", { body: { kind, ...f, ...bot.values } }); setSent(true); }); }}>
+      {bot.field}
       <Field label="Nome"><input className="input" autoComplete="name" required value={f.name} onChange={(e) => set("name", e.target.value)} /></Field>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="E-mail"><input className="input" type="email" autoComplete="email" required value={f.email} onChange={(e) => set("email", e.target.value)} /></Field>

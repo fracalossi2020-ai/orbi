@@ -1,7 +1,9 @@
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema as s } from "@/database";
-import { ApiError, audit, body, route } from "@/backend/api";
+import { ApiError, audit, body, route, staffMfaRequired } from "@/backend/api";
+import { isRateLimitedDb, rateLimitDb, resetLimitDb } from "@/backend/rate-limit-db";
+import { stepUpMethod } from "@/shared/step-up";
 import { publish, STAFF_CHANNEL } from "@/backend/bus";
 import { CPF_DRIVER_BLOCKED_MESSAGE } from "@/shared/account-deletion";
 import { authSecret, checkRateLimit, cpfDriverBlocked, decryptTotp, encryptTotp, readSession, revokeSessions, verifyPassword } from "@/backend/auth";
@@ -21,6 +23,7 @@ const ticketSchema = z.object({
 const codeSchema = z.object({ code: z.string().trim().regex(/^\d{6}$/, "Digite os 6 números do aplicativo.") });
 // Conta com senha: a senha. Conta do Google (sem senha própria): o código enviado ao e-mail (mesmo reauth do saque), em emailCode.
 const disableSchema = codeSchema.extend({ password: z.string().optional(), emailCode: z.string().trim().regex(/^\d{6}$/, "Digite os 6 números enviados ao seu e-mail.").optional() });
+const stepUpSchema = z.object({ code: z.string().trim().regex(/^\d{6}$/, "Digite os 6 números do aplicativo.").optional(), password: z.string().max(128).optional() });
 const revokeSchema = z.object({ id: z.string().uuid().optional(), others: z.boolean().optional() });
 
 /** Nome curto do aparelho a partir do navegador, para a lista de sessões. */
@@ -40,7 +43,7 @@ export const GET = route<{ what: string }>(async ({ user, params }) => {
     return { sessions: rows.map((r) => ({ id: r.id, device: deviceName(r.userAgent), createdAt: r.createdAt, lastSeenAt: r.lastSeenAt, current: r.id === cur?.session.id })) };
   }
   if (params.what === "mfa") {
-    return { enabled: !!user.totpEnabledAt, required: STAFF.includes(user.role), recoveryLeft: user.recoveryCodes?.length ?? 0 };
+    return { enabled: !!user.totpEnabledAt, required: STAFF.includes(user.role), recoveryLeft: user.recoveryCodes?.length ?? 0, stepUp: STAFF.includes(user.role) ? stepUpMethod(!!user.totpEnabledAt, staffMfaRequired()) : null };
   }
   if (params.what === "tickets") {
     return { tickets: await db.select().from(s.tickets).where(eq(s.tickets.userId, user.id)).orderBy(desc(s.tickets.createdAt)).limit(50) };
@@ -51,8 +54,36 @@ export const GET = route<{ what: string }>(async ({ user, params }) => {
   throw new ApiError(404, "Recurso não encontrado.");
 });
 
-export const POST = route<{ what: string }>(async ({ req, user, params }) => {
+export const POST = route<{ what: string }>(async ({ req, user, session, params }) => {
   const db = await getDb();
+  // Reautenticação da equipe para ações sensíveis do painel (vale 5 minutos). Com a segunda etapa ativa, o código do
+  // aplicativo (o mesmo passo não vale duas vezes); sem ela (só ambiente de teste, quando a exigência está desligada), a senha.
+  if (params.what === "step-up") {
+    if (!STAFF.includes(user.role)) throw new ApiError(403, "Sua conta não tem acesso a este recurso.");
+    const method = stepUpMethod(!!user.totpEnabledAt, staffMfaRequired());
+    if (!method) throw new ApiError(403, "Para usar o painel, ative a verificação em duas etapas na sua conta.", "mfa_setup");
+    const key = `stepup:${user.id}`;
+    if (await isRateLimitedDb(key, 6)) throw new ApiError(429, "Muitas tentativas. Aguarde 15 minutos.");
+    const v = await body(req, stepUpSchema);
+    const fail = async (message: string): Promise<never> => {
+      await rateLimitDb(key, 6);
+      await audit(user.id, "staff.step_up_failed", "user", user.id, { method });
+      throw new ApiError(400, message);
+    };
+    if (method === "totp") {
+      if (!v.code) throw new ApiError(400, "Digite o código do aplicativo autenticador.");
+      const step = user.totpSecret ? verifyTotp(decryptTotp(user.totpSecret), v.code, user.totpLastStep) : null;
+      if (step === null) await fail("Código incorreto ou já usado. Espere o próximo código do aplicativo e tente de novo.");
+      else await db.update(s.users).set({ totpLastStep: step }).where(eq(s.users.id, user.id));
+    } else {
+      if (!v.password) throw new ApiError(400, "Informe a sua senha.");
+      if (!(await verifyPassword(v.password, user.passwordHash))) await fail("Senha incorreta.");
+    }
+    await resetLimitDb(key);
+    await db.update(s.sessions).set({ stepUpAt: new Date() }).where(eq(s.sessions.id, session.id));
+    await audit(user.id, "staff.step_up", "user", user.id, { method });
+    return { ok: true };
+  }
   if (params.what === "tickets") {
     if (!checkRateLimit(`ticket:${user.id}`, 10, 60 * 60_000)) throw new ApiError(429, "Muitos chamados em pouco tempo. Aguarde um pouco.");
     const v = await body(req, ticketSchema);

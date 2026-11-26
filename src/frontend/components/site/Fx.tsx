@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { Icon } from "@/frontend/components/Icon";
 import Link from "next/link";
@@ -21,16 +21,32 @@ export function Reveal({ children, className = "", delay = 0, as = "div" }: { ch
  */
 export function CookieNotice() {
   const [show, setShow] = useState(false);
+  // O aviso é fixo: enquanto aparece, um espaço do mesmo tamanho no fim da página deixa o rodapé rolar para fora de baixo dele.
+  const box = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(72);
+  useEffect(() => {
+    const el = box.current;
+    if (!show || !el) return;
+    const measure = () => setHeight(el.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [show]);
   useEffect(() => {
     try { if (localStorage.getItem("prumo-cookies-ok") !== "1") setShow(true); } catch { /* armazenamento bloqueado: não insiste */ }
   }, []);
   if (!show) return null;
   const ok = () => { setShow(false); try { localStorage.setItem("prumo-cookies-ok", "1"); } catch { /* sem armazenamento */ } };
   return (
-    <div role="region" aria-label="Aviso de cookies" className="anim-rise fixed inset-x-3 bottom-3 z-[55] mx-auto flex max-w-xl flex-wrap items-center gap-3 rounded-[20px] bg-deep p-4 text-sm text-on-deep shadow-[0_24px_60px_-20px_rgb(0_0_0/.7)] sm:bottom-5 sm:flex-nowrap">
-      <p className="flex-1">Usamos só cookies necessários: para manter você conectado e lembrar o tema. Sem anúncios e sem rastreamento. <Link href="/privacidade" className="font-semibold underline underline-offset-2">Privacidade</Link></p>
-      <button type="button" onClick={ok} className="btn btn-sm btn-on-deep shrink-0">Entendi</button>
+    <>
+    <div ref={box} role="region" aria-label="Aviso de cookies" className="anim-rise fixed inset-x-2 bottom-[max(8px,env(safe-area-inset-bottom))] z-[55] mx-auto flex max-w-xl items-center gap-2 rounded-2xl bg-deep py-1.5 pr-1.5 pl-3.5 text-[13px] leading-snug text-on-deep shadow-[0_24px_60px_-20px_rgb(0_0_0/.7)] sm:inset-x-3 sm:bottom-5 sm:gap-3 sm:rounded-[20px] sm:p-4 sm:text-sm sm:flex-nowrap">
+      {/* No celular, uma faixa de 1 a 2 linhas: não cobre os campos do formulário. */}
+      <p className="flex-1"><span className="sm:hidden">Só cookies necessários, sem anúncios. </span><span className="hidden sm:inline">Usamos só cookies necessários: para manter você conectado e lembrar o tema. Sem anúncios e sem rastreamento. </span><Link href="/privacidade" className="font-semibold underline underline-offset-2">Privacidade</Link></p>
+      <button type="button" onClick={ok} className="btn btn-sm btn-on-deep shrink-0 !px-4">Entendi</button>
     </div>
+    <div aria-hidden="true" data-cookie-spacer className="" style={{ height: `calc(${height}px + max(8px, env(safe-area-inset-bottom)) + 12px)` }} />
+    </>
   );
 }
 

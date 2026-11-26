@@ -260,7 +260,7 @@ function OfferCard({ offer, reload }: { offer: Offer; reload: () => void }) {
           <span className="num text-sm font-bold">{left}s</span>
         </span>
       </div>
-      <MapView className="h-36 md:h-52" ariaLabel="Rota da corrida oferecida" route={offer.geometry} points={[{ id: "o", kind: "origin", lat: offer.origin.lat, lng: offer.origin.lng }, ...offer.stops.map((p, i) => ({ id: `s${i}`, kind: "stop" as const, lat: p.lat, lng: p.lng })), { id: "d", kind: "dest", lat: offer.dest.lat, lng: offer.dest.lng }]} />
+      <MapView className="h-28 sm:h-36 md:h-52" ariaLabel="Rota da corrida oferecida" route={offer.geometry} points={[{ id: "o", kind: "origin", lat: offer.origin.lat, lng: offer.origin.lng }, ...offer.stops.map((p, i) => ({ id: `s${i}`, kind: "stop" as const, lat: p.lat, lng: p.lng })), { id: "d", kind: "dest", lat: offer.dest.lat, lng: offer.dest.lng }]} />
       <div className="space-y-3 p-5">
         <p className="num text-sm text-muted">{km(offer.pickupDistanceM)} até o passageiro (~{mins(offer.pickupEtaS)}) · {km(offer.distanceM)} de viagem · {METHOD_LABEL[offer.paymentMethod]}</p>
         <dl className="text-sm"><div className="flex gap-2"><dt className="text-muted">Busca em</dt><dd className="font-medium">{offer.origin.label}</dd></div>{offer.stops.map((p, i) => <div key={i} className="flex gap-2"><dt className="text-muted">Parada {i + 1}</dt><dd className="font-medium">{p.label}</dd></div>)}<div className="flex gap-2"><dt className="text-muted">Leva para</dt><dd className="font-medium">{offer.dest.label}</dd></div></dl>
@@ -272,7 +272,7 @@ function OfferCard({ offer, reload }: { offer: Offer; reload: () => void }) {
         <PayHint method={offer.paymentMethod} totalCents={offer.totalCents} />
         <ErrorNote>{error}</ErrorNote>
         {/* Presos no fim da tela, acima do menu: aceitar nunca depende de rolar. */}
-        <div className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-10 -mx-5 -mb-5 grid grid-cols-[1fr_2fr] gap-2 rounded-b-[27px] bg-surface px-5 pt-2 pb-5 md:bottom-0">
+        <div className="sticky bottom-[var(--nav-h)] z-10 -mx-5 -mb-5 grid grid-cols-[1fr_2fr] gap-2 rounded-b-[27px] bg-surface px-5 pt-2 pb-5 md:bottom-0">
           <button type="button" className="btn btn-ghost btn-lg" disabled={busy} onClick={() => respond(false)}>Recusar</button>
           <button type="button" className="btn btn-primary btn-lg" disabled={busy} onClick={() => respond(true)}>Aceitar</button>
         </div>
@@ -299,7 +299,7 @@ function ActiveRide({ ride, reload, position }: { ride: Ride; reload: () => void
   });
   const target = ride.status === "in_progress" ? ride.dest : ride.origin;
   return (
-    <section className="overflow-hidden rounded-[28px] border border-line bg-surface" data-testid="active-ride">
+    <section className="overflow-clip rounded-[28px] border border-line bg-surface" data-testid="active-ride">
       <MapView className="h-64" ariaLabel="Mapa da corrida" route={ride.geometry} points={[
         { id: "o", kind: "origin", lat: ride.origin.lat, lng: ride.origin.lng }, { id: "d", kind: "dest", lat: ride.dest.lat, lng: ride.dest.lng },
         ...ride.stops.map((p, i) => ({ id: `s${i}`, kind: "stop" as const, lat: p.lat, lng: p.lng })),
@@ -331,12 +331,17 @@ function ActiveRide({ ride, reload, position }: { ride: Ride; reload: () => void
           <a className="btn btn-soft" target="_blank" rel="noreferrer" href={navUrl(target, "google", ride.status === "in_progress" ? ride.stops : [])}><Icon name="route" size={18} /> Google Maps</a>
           <a className="btn btn-soft" target="_blank" rel="noreferrer" href={navUrl(ride.status === "in_progress" && ride.stops[0] ? ride.stops[0] : target, "waze")}><Icon name="route" size={18} /> Waze{ride.status === "in_progress" && ride.stops.length ? " (parada 1)" : ""}</a>
         </div>
-        <p className="num text-sm text-muted">Bruto {brl(ride.grossCents)} · comissão {brl(ride.commissionCents)} · você recebe <strong className="text-ink">{brl(ride.driverNetCents)}</strong> · {METHOD_LABEL[ride.paymentMethod]}</p>
+        <p className="num text-sm text-muted"><span className="max-md:hidden">Bruto {brl(ride.grossCents)} · comissão {brl(ride.commissionCents)} · </span>você recebe <strong className="text-ink">{brl(ride.driverNetCents)}</strong> · {METHOD_LABEL[ride.paymentMethod]}</p>
         {ride.status === "in_progress" && <PayHint method={ride.paymentMethod} totalCents={ride.totalCents} atEnd />}
         <RideChat rideId={ride.id} messages={ride.messages} onSent={reload} />
-        {ride.status === "accepted" && <button type="button" className="btn btn-primary btn-lg w-full" disabled={busy} onClick={() => act("arrive")}>Cheguei ao passageiro</button>}
-        {ride.status === "arrived" && <button type="button" className="btn btn-primary btn-lg w-full" disabled={busy} onClick={() => act("start")}>Iniciar viagem</button>}
-        {ride.status === "in_progress" && !farAsk && <button type="button" className="btn btn-primary btn-lg w-full" disabled={busy} onClick={() => act("complete")}>Encerrar viagem</button>}
+        {/* No celular o botão principal fica preso acima do menu: avançar a corrida nunca depende de rolar. */}
+        {(ride.status === "accepted" || ride.status === "arrived" || (ride.status === "in_progress" && !farAsk)) && (
+          <div className="sticky bottom-[var(--nav-h)] z-10 -mx-5 bg-surface px-5 py-2 md:static md:mx-0 md:p-0">
+            {ride.status === "accepted" && <button type="button" className="btn btn-primary btn-lg w-full" disabled={busy} onClick={() => act("arrive")}>Cheguei ao passageiro</button>}
+            {ride.status === "arrived" && <button type="button" className="btn btn-primary btn-lg w-full" disabled={busy} onClick={() => act("start")}>Iniciar viagem</button>}
+            {ride.status === "in_progress" && !farAsk && <button type="button" className="btn btn-primary btn-lg w-full" disabled={busy} onClick={() => act("complete")}>Encerrar viagem</button>}
+          </div>
+        )}
         {ride.status === "in_progress" && farAsk && (
           <div className="space-y-2 rounded-xl bg-surface-2 p-3" data-testid="far-complete">
             <label className="block text-sm font-semibold" htmlFor="far-reason">Por que vai encerrar longe do destino?</label>
@@ -446,7 +451,7 @@ export default function DriverHome() {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-2xl bg-surface-2 px-4 py-3 text-sm" data-testid="gps-status">
           <span className="flex items-center gap-2 font-semibold"><Icon name="phone" size={16} />GPS {gps.device === "este aparelho" ? "deste aparelho" : `do seu ${gps.device}`}</span>
           <span className="text-muted">{gps.fix ? (gps.fix.accuracy != null ? `precisão ±${Math.max(1, Math.round(gps.fix.accuracy))} m` : "sinal recebido") : "procurando sinal…"}</span>
-          <span className="text-muted">{gps.screenOn ? "tela mantida acesa" : "deixe a tela acesa enquanto roda"}</span>
+          <span className="text-muted max-md:hidden">{gps.screenOn ? "tela mantida acesa" : "deixe a tela acesa enquanto roda"}</span>
         </div>
       )}
       {online && !manual && gps.offline && <Note tone="warn">Sem internet agora (4G sem sinal ou Wi-Fi caiu). O GPS continua marcando sua posição e ela é enviada assim que a conexão voltar. Enquanto isso, novas corridas não chegam.</Note>}
@@ -455,7 +460,7 @@ export default function DriverHome() {
       {data.driver && !data.driver.pixKey && data.paymentRules?.pix_driver && !data.ride && !data.offer && (
         <Link href="/motorista/conta#recebimento" className="flex items-center gap-3 rounded-2xl p-3 text-sm shadow-[0_0_0_1px_var(--line)_inset] hover:bg-surface-2">
           <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary text-on-primary"><Icon name="qr" size={20} /></span>
-          <span className="flex-1"><span className="block font-semibold">Receba também por Pix e cartão</span><span className="block text-muted">Cadastre sua chave Pix ou sua maquininha para receber mais corridas.</span></span>
+          <span className="flex-1"><span className="block font-semibold">Receba também por Pix e cartão</span><span className="block text-muted max-md:hidden">Cadastre sua chave Pix ou sua maquininha para receber mais corridas.</span></span>
           <Icon name="arrow" size={18} />
         </Link>
       )}
@@ -476,7 +481,7 @@ export default function DriverHome() {
         </>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className={`grid grid-cols-2 gap-3 ${data.ride || data.offer ? "max-md:hidden" : ""}`}>
         <div className="rounded-[22px] border border-line p-4"><p className="text-sm text-muted">Saldo</p><p className="display num text-2xl">{brl(data.balanceCents)}</p></div>
         <div className="rounded-[22px] border border-line p-4"><p className="text-sm text-muted">Sua nota</p><p className="display num text-2xl">{data.rating ? data.rating.toFixed(1).replace(".", ",") : "—"}</p></div>
       </div>

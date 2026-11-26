@@ -38,6 +38,28 @@ describe("configuração de execução (N1/N3)", () => {
   it("produção sem DATABASE_URL nem banco embutido não sobe", () => {
     expect(runtimeConfigProblems({ NODE_ENV: "production", TRUST_PROXY_HOPS: "1" }).join()).toContain("DATABASE_URL");
   });
+  it("A11: recusa pular o DNS do e-mail, endereços do Google trocados, limites absurdos e o atraso reduzido do login", () => {
+    const bad = (extra: Record<string, string>) => runtimeConfigProblems({ ...prod, ...extra }).join("|");
+    expect(bad({ PRUMO_SKIP_EMAIL_DNS: "true" })).toContain("PRUMO_SKIP_EMAIL_DNS");
+    for (const name of ["GOOGLE_AUTH_URL", "GOOGLE_TOKEN_URL", "GOOGLE_JWKS_URL", "GOOGLE_ISSUER"]) expect(bad({ [name]: "http://localhost:3102/x" }), name).toContain(name);
+    // o endereço oficial escrito explicitamente continua valendo
+    expect(runtimeConfigProblems({ ...prod, GOOGLE_TOKEN_URL: "https://oauth2.googleapis.com/token", GOOGLE_ISSUER: "https://accounts.google.com,accounts.google.com" })).toEqual([]);
+    for (const v of ["0", "-5", "100000", "abc", "1.5"]) expect(bad({ PRUMO_WRITE_LIMIT: v }), v).toContain("PRUMO_WRITE_LIMIT");
+    expect(bad({ PRUMO_CPF_LOOKUP_LIMIT: "999999" })).toContain("PRUMO_CPF_LOOKUP_LIMIT");
+    expect(runtimeConfigProblems({ ...prod, PRUMO_WRITE_LIMIT: "300", PRUMO_CPF_LOOKUP_LIMIT: "300" })).toEqual([]);
+    expect(bad({ PRUMO_LOGIN_DELAY_SCALE: "0" })).toContain("PRUMO_LOGIN_DELAY_SCALE");
+    expect(bad({ PRUMO_FORM_GUARD_RELAX: "true" })).toContain("PRUMO_FORM_GUARD_RELAX");
+  });
+  it("A4: recusa ADMIN_ALLOWED_IPS mal formada, aceita bem formada e vazia", () => {
+    expect(runtimeConfigProblems({ ...prod, ADMIN_ALLOWED_IPS: "203.0.113.7, 10.0.0.0/8, 2001:db8::/32" })).toEqual([]);
+    expect(runtimeConfigProblems({ ...prod, ADMIN_ALLOWED_IPS: "" })).toEqual([]);
+    expect(runtimeConfigProblems({ ...prod, ADMIN_ALLOWED_IPS: "203.0.113.7, banana" }).join()).toContain("ADMIN_ALLOWED_IPS");
+    expect(runtimeConfigProblems({ ...prod, ADMIN_ALLOWED_IPS: "10.0.0.0/40" }).join()).toContain("ADMIN_ALLOWED_IPS");
+  });
+  it("os atalhos de teste (e2e, produção local) seguem livres", () => {
+    const e2e = { NODE_ENV: "production", PRUMO_ALLOW_EMBEDDED_DB: "true", PRUMO_SKIP_EMAIL_DNS: "true", PRUMO_LOGIN_DELAY_SCALE: "0", PRUMO_FORM_GUARD_RELAX: "true", GOOGLE_AUTH_URL: "http://localhost:3102/auth", PRUMO_WRITE_LIMIT: "100000" };
+    expect(runtimeConfigProblems(e2e)).toEqual([]);
+  });
   it("APP_URL é obrigatória e https em produção de verdade, mas não no modo local", () => {
     const { APP_URL: _a, ...semUrl } = prod;
     expect(runtimeConfigProblems(semUrl).join()).toContain("APP_URL");

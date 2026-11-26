@@ -82,7 +82,7 @@ function ModeSwitch({ root }: { root: string }) {
   // Link comum (não <Link>): cada app tem seu próprio layout protegido no servidor.
   return (
     <a href={to.href} onClick={skipNextSplash} aria-label={to.label} data-testid="mode-switch"
-      className="mr-1 inline-flex h-9 items-center gap-1.5 rounded-full bg-surface-2 px-3 text-xs font-semibold transition-colors hover:bg-[color-mix(in_srgb,var(--primary)_14%,transparent)] hover:text-brand md:text-sm">
+      className="mr-1 inline-flex h-11 items-center gap-1.5 rounded-full md:h-9 bg-surface-2 px-3 text-xs font-semibold transition-colors hover:bg-[color-mix(in_srgb,var(--primary)_14%,transparent)] hover:text-brand md:text-sm">
       <Icon name={to.icon} size={16} /><span className="md:hidden">{to.short}</span><span className="hidden md:inline">{to.label}</span>
     </a>
   );
@@ -111,7 +111,7 @@ export function AppShell({ nav, title, children, flush, topNav = false, backExce
   };
   const logout = async () => { await api("/api/auth/logout", { body: {} }); skipNextSplash(); window.location.href = "/entrar"; };
   return (
-    <div className={`flex min-h-svh flex-col bg-bg ${topNav ? "" : "md:flex-row"}`}>
+    <div className={`flex min-h-svh flex-col bg-bg [--nav-h:calc(4rem+env(safe-area-inset-bottom))] ${topNav ? "" : "md:flex-row"}`}>
       {/* Abertura: ela mesma decide se aparece (uma vez por sessão do navegador). */}
       <AppSplash />
       <aside className={`sticky top-0 hidden h-svh w-60 shrink-0 flex-col border-r border-line bg-surface p-4 ${topNav ? "" : "md:flex"}`}>
@@ -128,7 +128,7 @@ export function AppShell({ nav, title, children, flush, topNav = false, backExce
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className={`sticky top-0 z-40 bg-[color-mix(in_srgb,var(--surface)_96%,transparent)] backdrop-blur-xl flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center pt-[env(safe-area-inset-top)] justify-between border-b border-line px-3 ${topNav ? "md:h-16 md:px-8 md:pt-0" : "md:h-14 md:justify-end md:pt-0"}`}>
+        <header className={`sticky top-0 z-40 bg-surface md:bg-[color-mix(in_srgb,var(--surface)_96%,transparent)] md:backdrop-blur-xl flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center pt-[env(safe-area-inset-top)] justify-between border-b border-line px-3 ${topNav ? "md:h-16 md:px-8 md:pt-0" : "md:h-14 md:justify-end md:pt-0"}`}>
           {back && (
             <button type="button" onClick={goBack} aria-label={`Voltar para ${backLabel}`} data-testid="app-back"
               className={`-ml-1 grid size-11 shrink-0 place-items-center rounded-full hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)] ${onMainTab ? "md:hidden" : ""} ${topNav ? "" : "md:hidden"}`}>
@@ -154,17 +154,18 @@ export function AppShell({ nav, title, children, flush, topNav = false, backExce
           </div>
         </header>
         <OfflineBanner />
-        <main className={`flex-1 ${flush ? "" : "mx-auto w-full max-w-4xl p-4 pb-32 md:p-8"}`}>{children}</main>
+        <main className={`flex-1 ${flush ? "" : "mx-auto w-full max-w-4xl p-4 pb-[calc(var(--nav-h)+1.5rem)] md:p-8"}`}>{children}</main>
       </div>
 
       {/* Barra de baixo flutuante: o item ativo ganha o ícone cheio e uma pílula tonal, sem mudar de tamanho; os outros ficam com a cor apagada (não cinza). */}
       <nav aria-label={title}
-        className="fixed inset-x-3 bottom-[max(12px,env(safe-area-inset-bottom))] z-40 flex gap-1 rounded-[26px] border border-line bg-[color-mix(in_srgb,var(--surface)_97%,transparent)] p-1.5 shadow-[0_14px_34px_-14px_rgb(2_6_14/.45)] backdrop-blur-xl md:hidden">
+        /* Celular: barra sólida, colada na borda de baixo (nada de conteúdo aparecendo por trás ou pelos cantos). A altura é a variável --nav-h, usada para reservar o espaço no fim das telas. */
+        className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--nav-h)] gap-1 border-t border-line bg-surface px-2 pt-1.5 pb-[env(safe-area-inset-bottom)] md:hidden">
         {nav.map((n) => {
           const on = isActive(n.href);
           return (
             <Link key={n.href} href={n.href} aria-current={on ? "page" : undefined}
-              className={`relative flex h-[58px] flex-1 flex-col items-center justify-center gap-0.5 rounded-[20px] text-[11px] leading-tight transition-colors duration-200 ${on ? "font-bold text-brand" : "font-semibold text-muted active:bg-surface-2"}`}>
+              className={`relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-[20px] text-[11px] leading-tight transition-colors duration-200 ${on ? "font-bold text-brand" : "font-semibold text-muted active:bg-surface-2"}`}>
               {n.img
                 ? <span className={`grid h-8 w-14 place-items-center rounded-full transition-colors duration-200 motion-reduce:transition-none ${on ? "bg-tint" : ""}`}>
                     <IconGlyph name={n.img} size={24} bare filled={on} tone={on ? "brand" : "quiet"} behind={on ? "var(--tint)" : "var(--surface)"} />

@@ -194,6 +194,9 @@ function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false
   const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
   // Para quem é a corrida: a própria conta ou outra pessoa, com nome e celular para o motorista.
   const [forOther, setForOther] = useState(false);
+  // Celular: agendar, pedir para outra pessoa e cupom ficam atrás de "Mais opções" (computador mostra tudo).
+  const [moreOpen, setMoreOpen] = useState(false);
+  useEffect(() => { if (when === "later" || forOther) setMoreOpen(true); }, [when, forOther]);
   const [riderName, setRiderName] = useState("");
   const [riderPhone, setRiderPhone] = useState("");
   // Atalho de "Serviços" escolhido antes do destino, e a dica que aparece até os preços chegarem.
@@ -491,15 +494,26 @@ function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false
       <div>
         {/* Celular: volta para a tela de início (busca, atalhos e cartões). */}
         {onBack && !quote && <button type="button" onClick={onBack} aria-label="Voltar para o início" className="-ml-2 mb-1 grid size-10 place-items-center rounded-full hover:bg-surface-2"><Icon name="back" size={22} /></button>}
-        {firstName && <p className="text-xs font-semibold text-brand">{greeting()}, {firstName}</p>}
-        <h1 className="display text-[1.7rem] leading-none md:text-[2.75rem]">Para onde vamos?</h1>
+        {firstName && <p className="text-xs font-semibold text-brand max-md:hidden">{greeting()}, {firstName}</p>}
+        <h1 className={`display text-[1.7rem] leading-none md:text-[2.75rem] ${quote && !editing ? "max-md:sr-only" : ""}`}>Para onde vamos?</h1>
       </div>
       {showFields ? fieldsBlock(false) : (
         <div className="space-y-2" data-testid="trip-summary">
-          {origin && <PlacePreview compact place={origin} role="Partida" />}
-          {filledStops.map((p, i) => <PlacePreview key={i} compact place={p} role={`Parada ${i + 1}`} />)}
-          {dest && <PlacePreview compact place={dest} role="Destino final" />}
-          <button type="button" className="min-h-11 w-full text-sm font-semibold underline" onClick={() => setEditing(true)}>Alterar partida ou destino</button>
+          {/* Celular: uma linha por ponto, sem endereço completo (o nome basta). */}
+          <ul className="space-y-1.5 rounded-2xl bg-surface-2 px-3 py-2.5 md:hidden" aria-label="Trajeto">
+            {[origin && { label: origin.label, kind: "origin" }, ...filledStops.map((p) => ({ label: p.label, kind: "stop" })), dest && { label: dest.label, kind: "dest" }].filter(Boolean).map((r, i) => (
+              <li key={i} className="flex items-center gap-3 text-sm">
+                <span aria-hidden="true" className={`size-2.5 shrink-0 ${r!.kind === "origin" ? "rounded-full border-[3px] border-primary bg-surface" : r!.kind === "dest" ? "rounded-[3px] bg-primary" : "rounded-[3px] border-2 border-primary"}`} />
+                <span className="truncate font-semibold">{r!.label}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="space-y-2 max-md:hidden">
+            {origin && <PlacePreview compact place={origin} role="Partida" />}
+            {filledStops.map((p, i) => <PlacePreview key={i} compact place={p} role={`Parada ${i + 1}`} />)}
+            {dest && <PlacePreview compact place={dest} role="Destino final" />}
+          </div>
+          <button type="button" className="min-h-11 w-full text-sm font-semibold underline max-md:-mt-1 max-md:min-h-10" onClick={() => setEditing(true)}>Alterar partida ou destino</button>
         </div>
       )}
       {narrowQuote()}
@@ -549,9 +563,9 @@ function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false
           {picking && <Note tone="ok">Toque no mapa para marcar {pickName(picking)}.</Note>}
           {gpsNote && <p className="text-xs text-muted">{gpsNote}</p>}
           {hint && !quote && <Note tone="ok">{hint}</Note>}
-          {!inWide && !dest && !picking && <Services hasMoto={hasMoto} onPick={pickService} />}
+          {!inWide && !dest && !picking && <div className="max-md:hidden"><Services hasMoto={hasMoto} onPick={pickService} /></div>}
           {!inWide && !dest && !picking && <Shortcuts places={saved.places} recent={recent} onPick={setDest} />}
-          {!inWide && !dest && !picking && !askLocation && <SafetyCard />}
+          {!inWide && !dest && !picking && !askLocation && <div className="max-md:hidden"><SafetyCard /></div>}
           {inWide ? (
             (origin || dest) && (
               <div className="space-y-2" data-testid="trip-summary">
@@ -589,45 +603,52 @@ function RequestPanel({ onCreated, setMapState, recent, firstName, wide3 = false
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5 font-semibold">{o.name}<span className="inline-flex items-center gap-0.5 text-xs font-medium text-muted"><Icon name="user" size={12} />{o.seats}</span></span>
-                  <span className="block text-xs text-muted">{o.pickupEtaS !== null ? `Motorista a ~${mins(o.pickupEtaS)} · você chega ~${clock(o.pickupEtaS + quote.route.durationS)}` : "Sem motoristas online agora"}</span>
-                  <span className="block truncate text-xs text-muted">{o.description}</span>
+                  <span className="block text-xs text-muted">{o.pickupEtaS !== null ? <>Motorista a ~{mins(o.pickupEtaS)}<span className="max-md:hidden"> · você chega ~{clock(o.pickupEtaS + quote.route.durationS)}</span></> : "Sem motoristas online agora"}</span>
+                  <span className="block truncate text-xs text-muted max-md:hidden">{o.description}</span>
                 </span>
                 <span className="num text-right font-semibold">{brl(o.totalCents)}{o.discountCents > 0 && <span className="block text-xs font-normal text-muted line-through">{brl(o.totalCents + o.discountCents)}</span>}</span>
               </button>
             ))}
           </div>
-          {selected && <p className="num text-xs text-muted">Corrida {brl(selected.grossCents)}{selected.serviceFeeCents > 0 && ` + taxa de serviço ${brl(selected.serviceFeeCents)}`}{selected.discountCents > 0 && ` − cupom ${brl(selected.discountCents)}`}</p>}
+          {selected && <p className={`num text-xs text-muted ${selected.serviceFeeCents > 0 || selected.discountCents > 0 ? "" : "max-md:hidden"}`}>Corrida {brl(selected.grossCents)}{selected.serviceFeeCents > 0 && ` + taxa de serviço ${brl(selected.serviceFeeCents)}`}{selected.discountCents > 0 && ` − cupom ${brl(selected.discountCents)}`}</p>}
 
           <fieldset>
-            <legend className="mb-1.5 text-sm font-semibold">Pagamento</legend>
-            <div className="space-y-2" role="radiogroup" aria-label="Forma de pagamento">
+            <legend className="mb-1.5 text-sm font-semibold max-md:sr-only">Pagamento</legend>
+            <div className="space-y-2 max-md:-m-1 max-md:flex max-md:gap-2 max-md:space-y-0 max-md:overflow-x-auto max-md:p-1 max-md:[scrollbar-width:none]" role="radiogroup" aria-label="Forma de pagamento">
               {METHOD_ORDER.filter((m) => quote.payment[m].available).map((m) => {
                 const info = METHOD_INFO[m];
                 const n = m === "pix_driver" || m === "card_machine" ? quote.acceptingNow[m] : null;
                 return (
                   <button key={m} type="button" role="radio" aria-checked={method === m} onClick={() => setMethod(m)}
-                    className={`flex min-h-14 w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-[box-shadow,background-color] ${method === m ? "bg-[color-mix(in_srgb,var(--primary)_8%,transparent)] shadow-[0_0_0_2px_var(--primary)_inset]" : "shadow-[0_0_0_1px_var(--line)_inset] hover:bg-surface-2"}`}>
-                    <span className={`grid size-10 shrink-0 place-items-center rounded-xl ${method === m ? "bg-primary text-on-primary" : "bg-surface-2 text-brand"}`}><Icon name={info.icon} size={20} weight="duotone" /></span>
+                    className={`flex min-h-14 w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-[box-shadow,background-color] max-md:min-h-11 max-md:w-auto max-md:shrink-0 max-md:gap-2 max-md:rounded-full max-md:py-1.5 max-md:pr-4 max-md:pl-1.5 ${method === m ? "bg-[color-mix(in_srgb,var(--primary)_8%,transparent)] shadow-[0_0_0_2px_var(--primary)_inset]" : "shadow-[0_0_0_1px_var(--line)_inset] hover:bg-surface-2"}`}>
+                    <span className={`grid size-10 shrink-0 place-items-center rounded-xl max-md:size-8 max-md:rounded-full ${method === m ? "bg-primary text-on-primary" : "bg-surface-2 text-brand"}`}><Icon name={info.icon} size={20} weight="duotone" /></span>
                     <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-semibold">{info.label}</span>
-                      <span className="block text-xs text-muted">{info.how}{n !== null ? (n ? ` · ${n} ${n === 1 ? "motorista aceita" : "motoristas aceitam"} agora` : " · nenhum motorista online aceita agora") : ""}</span>
+                      <span className="block whitespace-nowrap text-sm font-semibold">{info.label}</span>
+                      <span className="block text-xs text-muted max-md:hidden">{info.how}{n !== null ? (n ? ` · ${n} ${n === 1 ? "motorista aceita" : "motoristas aceitam"} agora` : " · nenhum motorista online aceita agora") : ""}</span>
                     </span>
                   </button>
                 );
               })}
             </div>
-            {!quote.payment.pix.available && <p className="mt-1.5 text-xs text-muted">Pix e cartão pelo app entram após o contrato com o provedor de pagamentos.</p>}
+            <p className="mt-1.5 text-xs text-muted md:hidden">{METHOD_INFO[method].how}{(method === "pix_driver" || method === "card_machine") && quote.acceptingNow[method] === 0 ? " · nenhum motorista online aceita agora" : ""}</p>
+            {!quote.payment.pix.available && <p className="mt-1.5 text-xs text-muted max-md:hidden">Pix e cartão pelo app entram após o contrato com o provedor de pagamentos.</p>}
           </fieldset>
 
-          {whenBlock}
-          {riderBlock}
-          {couponBlock}
+          {/* Celular: agendar, outra pessoa e cupom ficam recolhidos; o caminho principal é carro, pagamento e pedir. */}
+          <button type="button" className="flex min-h-11 w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold shadow-[0_0_0_1px_var(--line)_inset] md:hidden" aria-expanded={moreOpen} aria-controls="mais-opcoes" onClick={() => setMoreOpen(!moreOpen)}>
+            Mais opções <span className="text-xs font-normal text-muted">Agendar · outra pessoa · cupom</span>
+          </button>
+          <div id="mais-opcoes" className={`space-y-3 ${moreOpen ? "" : "max-md:hidden"}`}>
+            {whenBlock}
+            {riderBlock}
+            {couponBlock}
+          </div>
           <ErrorNote>{error}</ErrorNote>
         </div>
         {/* Fixo no fim da folha: pedir nunca depende de rolar a lista. Fica FORA do bloco acima, como filho direto da raiz do painel:
             um sticky não sai da caixa do pai, então, dentro do bloco, uma partida com endereço longo (que empurra o bloco para baixo)
             deixava o botão parcialmente escondido atrás da borda da folha. Aqui o pai começa no topo da folha e o botão sempre gruda no fim. */}
-        <div className="sticky bottom-0 -mx-4 bg-surface px-4 py-3 shadow-[0_-12px_16px_-12px_rgb(0_0_0/.12)] md:static md:mx-0 md:bg-transparent md:px-0 md:shadow-none">
+        <div className="sticky bottom-0 z-10 -mx-4 bg-surface px-4 py-3 shadow-[0_-12px_16px_-12px_rgb(0_0_0/.12)] max-md:-mb-4 max-md:pb-7 md:static md:mx-0 md:bg-transparent md:px-0 md:shadow-none">
           <button type="button" className="btn btn-primary btn-lg w-full" disabled={requestDisabled} onClick={submitRide}>{requestLabel}</button>
         </div>
       </>
@@ -805,7 +826,7 @@ export default function PassengerHome() {
 
   // Celular: tela menos a barra de cima (3,5rem) e a de baixo (4rem + margem do iPhone), para o botão de pedir nunca ficar escondido.
   return (
-    <div className="relative flex h-[calc(100svh-3.5rem-5.5rem-env(safe-area-inset-bottom))] flex-col md:h-[calc(100svh-4rem)] lg:grid lg:grid-cols-[minmax(320px,370px)_minmax(0,1.15fr)_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] lg:gap-6 lg:p-6">
+    <div className="relative flex h-[calc(100svh-3.5rem-env(safe-area-inset-top)-var(--nav-h))] flex-col md:h-[calc(100svh-4rem)] lg:grid lg:grid-cols-[minmax(320px,370px)_minmax(0,1.15fr)_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] lg:gap-6 lg:p-6">
       {/* Celular e tablet: o mapa ocupa a tela e o painel flutua por cima. Computador largo: o mapa é a terceira coluna. */}
       <MapView className="min-h-[32%] flex-1 md:absolute md:inset-0 lg:relative lg:inset-auto lg:col-start-3 lg:row-start-1 lg:min-h-0 lg:overflow-hidden lg:rounded-[28px] lg:shadow-[0_0_0_1px_var(--line)]" ariaLabel="Mapa da viagem" recenter
         padding={wide3 ? { top: 70, bottom: 60, left: 60, right: 60 } : wide ? { top: 90, bottom: 90, left: 540, right: 90 } : { top: 60, bottom: 50, left: 40, right: 40 }}
@@ -820,9 +841,11 @@ export default function PassengerHome() {
       </MapView>
       {/* Computador largo: no pedido, as duas primeiras colunas vêm do próprio painel (a seção "some" com display: contents);
           com corrida em andamento, um cartão ocupa as duas colunas. */}
-      <section className={`float-panel anim-sheet z-10 -mt-4 max-h-[calc(68%+1rem)] overflow-auto rounded-t-[28px] bg-surface p-4 pt-3 md:absolute md:top-6 md:bottom-6 md:left-6 md:mt-0 md:h-fit md:max-h-[calc(100%-3rem)] md:w-[460px] md:rounded-[32px] md:p-6 ${
+      <section className={`float-panel anim-sheet z-10 -mt-4 max-h-[calc(68%+1rem)] overflow-auto rounded-t-[28px] bg-surface p-4 pt-3 pb-0 md:absolute md:top-6 md:bottom-6 md:left-6 md:mt-0 md:h-fit md:max-h-[calc(100%-3rem)] md:w-[460px] md:rounded-[32px] md:p-6 ${
         showRequest && wide3 ? "lg:contents" : "lg:static lg:col-span-2 lg:col-start-1 lg:row-start-1 lg:h-fit lg:max-h-full lg:w-auto lg:max-w-2xl"}`}>
         <span aria-hidden="true" className="mx-auto -mt-1 mb-3 block h-1.5 w-10 rounded-full bg-line md:hidden" />
+        {/* Celular: o respiro do fim fica aqui dentro, para o botão fixo do pedido encostar na borda sem deixar conteúdo passando por baixo. */}
+        <div className="pb-4 md:contents">
         {loading && !data ? <Spinner />
           : active ? <ActiveRide ride={active} reload={reload} />
           : justEnded ? <RateLast ride={justEnded} onDone={() => { setDismissed(justEnded.id); reload(); }} />
@@ -834,6 +857,7 @@ export default function PassengerHome() {
             </div>
           )
           : <RequestPanel onCreated={reload} setMapState={setMapState} recent={recent} firstName={firstName} wide3={wide3} start={start ?? undefined} onBack={wide ? undefined : () => { setStart(null); setMapState({ points: [], route: null }); }} />}
+        </div>
       </section>
     </div>
   );

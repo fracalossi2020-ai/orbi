@@ -42,7 +42,8 @@ test("parada no caminho e corrida agendada pela interface", async ({ browser }) 
   await expect(page.locator(".prumo-mk--stop")).toBeVisible({ timeout: 30000 });
   await expect(page.getByRole("radio", { name: /Essencial/ })).not.toHaveText(withoutStop!);
 
-  // Agendar
+  // Agendar (no celular fica atrás de "Mais opções")
+  await page.getByRole("button", { name: /Mais opções/ }).click();
   await page.getByRole("radio", { name: "Agendar" }).click();
   await expect(page.getByLabel("Dia e hora da partida")).not.toHaveValue("");
   await page.getByRole("button", { name: /^Agendar Essencial/ }).click();
@@ -94,7 +95,12 @@ test("site: preço estimado sem cadastro, motoristas online, página da cidade, 
   await expect(page.getByTestId("pulse")).toContainText(/motoristas? online agora em Ipatinga/, { timeout: 20000 });
   await page.getByRole("combobox", { name: "Local de partida" }).fill("Origem");
   await page.getByRole("option", { name: /Origem Teste/ }).click();
-  await page.getByRole("combobox", { name: "Local de chegada" }).fill("Destino");
+  // A escolha da partida anima o cartão (layout): espera o campo assentar com o valor escolhido antes de digitar o destino.
+  await expect(page.getByRole("combobox", { name: "Local de partida" })).toHaveValue("Origem Teste");
+  const chegada = page.getByRole("combobox", { name: "Local de chegada" });
+  await chegada.click();
+  await chegada.fill("Destino");
+  await expect(chegada).toHaveValue("Destino");
   await page.getByRole("option", { name: /Destino Teste/ }).click();
   const est = page.getByTestId("estimates");
   await expect(est).toContainText("Essencial");

@@ -58,7 +58,7 @@ export function RideDemo() {
 
   return (
     <section id="demonstracao" className="bg-bg">
-      <div className="mx-auto grid max-w-[1440px] gap-10 px-5 py-24 md:px-10 md:py-32 lg:grid-cols-[minmax(340px,5fr)_7fr] lg:gap-14">
+      <div className="mx-auto grid max-w-[1440px] gap-10 px-5 py-14 md:px-10 md:py-32 lg:grid-cols-[minmax(340px,5fr)_7fr] lg:gap-14">
         <div>
           <h2 className="display text-[clamp(2.2rem,5vw,4.2rem)]">Veja o preço antes de pedir.</h2>
           <p className="mt-4 max-w-md text-muted">Experimente o caminho de um pedido: de onde, para onde e quanto custa.</p>

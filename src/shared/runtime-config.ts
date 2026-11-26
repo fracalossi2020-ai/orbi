@@ -3,6 +3,8 @@
  * Função pura (recebe o env), usada na subida (src/instrumentation.ts) e testada em tests/runtime-config.test.ts.
  */
 import { MIN_TRIP_FLOOR_S, MIN_TRIP_FRACTION } from "./ride-guards";
+import { hostsProblems } from "./hosts";
+import { allowListProblems } from "./ip-allow";
 
 export type Env = Record<string, string | undefined>;
 
@@ -43,6 +45,14 @@ export const isHttpsUrl = (v: string | undefined) => {
   try { return new URL(v ?? "").protocol === "https:"; } catch { return false; }
 };
 
+/** Endereços oficiais do Google (os mesmos de src/backend/google.ts). Qualquer outro, em produção, é recusado. */
+const GOOGLE_DEFAULTS: Record<string, string> = {
+  GOOGLE_AUTH_URL: "https://accounts.google.com/o/oauth2/v2/auth",
+  GOOGLE_TOKEN_URL: "https://oauth2.googleapis.com/token",
+  GOOGLE_JWKS_URL: "https://www.googleapis.com/oauth2/v3/certs",
+  GOOGLE_ISSUER: "https://accounts.google.com,accounts.google.com",
+};
+
 const numberOrNaN = (v: string | undefined) => (v === undefined || v.trim() === "" ? undefined : Number(v));
 
 /**
@@ -55,6 +65,7 @@ export function runtimeConfigProblems(env: Env): string[] {
   if (!env.DATABASE_URL) out.push("DATABASE_URL não definido: em produção o banco embutido não é permitido.");
   if (!env.APP_URL?.trim()) out.push("APP_URL não definido: informe o endereço público https do site (usado nos links dos e-mails de alerta).");
   else if (!isHttpsUrl(env.APP_URL)) out.push("APP_URL precisa ser um endereço https:// em produção.");
+  out.push(...hostsProblems(env));
   if (envFlag(env.ALLOW_MANUAL_LOCATION)) out.push("ALLOW_MANUAL_LOCATION=true libera posição manual (fraude de GPS): remova em produção.");
   if (env.PRUMO_REQUIRE_STAFF_MFA === "false") out.push("PRUMO_REQUIRE_STAFF_MFA=false desliga a verificação em duas etapas da equipe: remova em produção.");
   const guards = env.PRUMO_RIDE_GUARDS;
@@ -66,6 +77,20 @@ export function runtimeConfigProblems(env: Env): string[] {
   if (proxyHops(env) === null) out.push("TRUST_PROXY_HOPS ausente ou inválido: informe quantos proxies há na frente do app (inteiro de 1 a 10), senão todos os usuários contam como um único IP.");
   if (env.EMERGENCY_WEBHOOK_URL?.trim() && !env.EMERGENCY_WEBHOOK_SECRET?.trim()) out.push("EMERGENCY_WEBHOOK_URL definido sem EMERGENCY_WEBHOOK_SECRET: o webhook de emergência precisa de uma chave própria para assinar o corpo.");
   if (envFlag(env.TRUST_X_REAL_IP) && proxyHops(env) === null) out.push("TRUST_X_REAL_IP=true exige TRUST_PROXY_HOPS também definido.");
+  out.push(...allowListProblems(env.ADMIN_ALLOWED_IPS));
+  if (env.PRUMO_SKIP_EMAIL_DNS?.trim()) out.push("PRUMO_SKIP_EMAIL_DNS pula a conferência do domínio do e-mail (cadastros falsos): remova em produção.");
+  // O login com Google só vale falando com o Google de verdade: endereços trocados deixariam um servidor falso assinar o login.
+  for (const [name, expected] of Object.entries(GOOGLE_DEFAULTS)) {
+    const v = env[name]?.trim();
+    if (v && v !== expected) out.push(`${name} foi trocado: em produção o login com Google só pode usar o endereço oficial do Google (remova a variável).`);
+  }
+  if (env.PRUMO_FORM_GUARD_RELAX?.trim()) out.push("PRUMO_FORM_GUARD_RELAX desliga o tempo mínimo e o carimbo dos formulários (só para testes automatizados): remova em produção.");
+  if (env.PRUMO_LOGIN_DELAY_SCALE?.trim()) out.push("PRUMO_LOGIN_DELAY_SCALE reduz o atraso do login errado (só para testes automatizados): remova em produção.");
+  const limits: [string, number, number][] = [["PRUMO_WRITE_LIMIT", 1, 2000], ["PRUMO_CPF_LOOKUP_LIMIT", 1, 1000]];
+  for (const [name, min, max] of limits) {
+    const n = numberOrNaN(env[name]);
+    if (n !== undefined && !(Number.isInteger(n) && n >= min && n <= max)) out.push(`${name} precisa ser um inteiro entre ${min} e ${max} (ou ficar sem definir): limite fora disso deixa de proteger.`);
+  }
   return out;
 }
 

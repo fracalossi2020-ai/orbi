@@ -112,7 +112,8 @@ test("corrida completa entre passageiro, motorista e administração", async ({ 
   await passenger.getByRole("button", { name: "Casa", exact: true }).click();
   await expect(passenger.getByText("Salvo como Casa")).toBeVisible();
   await passenger.getByRole("button", { name: "Ver preços" }).click();
-  // Corrida para outra pessoa: sem nome e celular não dá para pedir
+  // Corrida para outra pessoa: sem nome e celular não dá para pedir (no celular fica atrás de "Mais opções")
+  await passenger.getByRole("button", { name: /Mais opções/ }).click();
   await passenger.getByRole("radio", { name: "Outra pessoa" }).click();
   await expect(passenger.getByRole("button", { name: /^Pedir / })).toBeDisabled();
   await passenger.getByLabel("Nome de quem embarca").fill("Joana Teste Convidada");

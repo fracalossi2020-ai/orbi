@@ -25,10 +25,11 @@ export default function Passageiros() {
         <Link href="/como-funciona#demonstracao" className="btn btn-lg btn-line-deep">Ver a demonstração</Link>
       </PageHead>
       <Dark>
-        <Reveal><p className="mono-label text-on-deep-muted">O que muda para você</p><h2 className="display mt-3 max-w-[18ch] text-[clamp(2rem,4.2vw,3.6rem)]">Segurança e clareza em cada viagem.</h2></Reveal>
-        <div className="mt-10"><Features items={ITEMS} /></div>
+        <Reveal><p className="mono-label text-on-deep-muted">O que muda para você</p><h2 className="display mt-3 max-w-[18ch] text-[clamp(1.8rem,4.2vw,3.6rem)]">Segurança e clareza em cada viagem.</h2></Reveal>
+        <div className="mt-6 md:mt-10"><Features items={ITEMS} /></div>
       </Dark>
-      <StoryPhone />
+      {/* Celular: o passo a passo fica em /como-funciona; aqui seria repetir. */}
+      <div className="max-md:hidden"><StoryPhone /></div>
     </>
   );
 }

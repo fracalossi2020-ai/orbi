@@ -15,9 +15,18 @@ import { reauthFields, requireReauth } from "@/backend/reauth";
 export const GET = publicRoute<{ action?: string[] }>(async ({ user, params }) => {
   if (!params.action) return { user: user ? publicUser(user) : null };
   if (!user) throw new ApiError(401, "Entre na sua conta para continuar.");
-  if (params.action[0] !== "export") throw new ApiError(404, "Recurso não encontrado.");
+  if (params.action[0] === "export") throw new ApiError(405, "Para baixar seus dados, confirme a senha na tela Minha conta.");
+  throw new ApiError(404, "Recurso não encontrado.");
+});
 
-  // LGPD, art. 18: portabilidade dos dados do titular.
+/**
+ * LGPD, art. 18: portabilidade dos dados do titular. A cópia tem dados pessoais de tudo (corridas, endereços, chat): pede a
+ * senha de novo (conta do Google: código no e-mail atual), como o saque e a exclusão da conta. Por isso é POST, não um link.
+ */
+export const POST = publicRoute<{ action?: string[] }>(async ({ req, user, params }) => {
+  if (!user) throw new ApiError(401, "Entre na sua conta para continuar.");
+  if (params.action?.[0] !== "export") throw new ApiError(404, "Recurso não encontrado.");
+  await requireReauth(user, await body(req, z.object(reauthFields)));
   const db = await getDb();
   const [rides, tickets, notifications, driver, vehicles, ledger, savedPlaces] = await Promise.all([
     db.select().from(s.rides).where(or(eq(s.rides.passengerId, user.id), eq(s.rides.driverId, user.id))).orderBy(desc(s.rides.createdAt)),

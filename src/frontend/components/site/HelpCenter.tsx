@@ -52,19 +52,19 @@ export function HelpCenter() {
   return (
     <>
       <section className="hero-light on-deep relative overflow-hidden bg-deep text-on-deep">
-        <div className="relative mx-auto max-w-[920px] px-5 pt-12 pb-10 text-center md:px-10 md:pt-16">
+        <div className="relative mx-auto max-w-[920px] px-5 pt-10 pb-6 text-center md:px-10 md:pt-16 md:pb-10">
           <p className="mono-label text-brand">Central de ajuda</p>
-          <h1 className="display mt-4 text-[clamp(2.6rem,6vw,5rem)] leading-[.95]">Como podemos ajudar?</h1>
-          <label className="help-search relative mx-auto mt-10 flex max-w-2xl items-center gap-3 rounded-full border border-line bg-surface px-5 text-ink">
+          <h1 className="display mt-3 text-[clamp(2.1rem,6vw,5rem)] leading-[.95] md:mt-4">Como podemos ajudar?</h1>
+          <label className="help-search relative mx-auto mt-6 flex max-w-2xl items-center gap-3 rounded-full md:mt-10 border border-line bg-surface px-5 text-ink">
             <Icon name="search" size={22} className="shrink-0 text-muted" />
             <span className="sr-only">Buscar nas perguntas</span>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ex.: cancelar, agendar, cupom, saque" className="min-h-16 w-full bg-transparent text-lg outline-none" type="search" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ex.: cancelar, agendar, cupom, saque" className="min-h-14 w-full bg-transparent text-base outline-none md:min-h-16 md:text-lg" type="search" />
           </label>
-          <p className="mt-4 text-sm text-on-deep-muted" role="status">{q || topic ? `${total} ${total === 1 ? "resposta" : "respostas"}` : `${TOPICS.reduce((n, t) => n + t.items.length, 0)} respostas em ${TOPICS.length} assuntos`}</p>
-          <div className="mt-6 flex flex-wrap justify-center gap-2" role="group" aria-label="Assuntos">
+          <p className="mt-4 text-sm text-on-deep-muted max-md:hidden" role="status">{q || topic ? `${total} ${total === 1 ? "resposta" : "respostas"}` : `${TOPICS.reduce((n, t) => n + t.items.length, 0)} respostas em ${TOPICS.length} assuntos`}</p>
+          <div className="-mx-5 mt-5 flex gap-2 overflow-x-auto px-5 pb-1 max-md:snap-x md:mx-0 md:mt-6 md:flex-wrap md:justify-center md:overflow-visible md:px-0" role="group" aria-label="Assuntos">
             {TOPICS.map((t) => (
               <button key={t.id} type="button" aria-pressed={topic === t.id} onClick={() => setTopic(topic === t.id ? null : t.id)}
-                className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${topic === t.id ? "bg-on-deep text-deep" : "shadow-[0_0_0_1px_color-mix(in_srgb,var(--on-deep)_28%,transparent)_inset] hover:bg-[color-mix(in_srgb,var(--on-deep)_10%,transparent)]"}`}>
+                className={`flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors max-md:min-h-11 max-md:snap-start ${topic === t.id ? "bg-on-deep text-deep" : "shadow-[0_0_0_1px_color-mix(in_srgb,var(--on-deep)_28%,transparent)_inset] hover:bg-[color-mix(in_srgb,var(--on-deep)_10%,transparent)]"}`}>
                 <Icon name={t.icon} size={16} />{t.title}
               </button>
             ))}
@@ -73,20 +73,20 @@ export function HelpCenter() {
       </section>
 
       <section className="bg-bg text-ink">
-        <div className="mx-auto grid max-w-[1180px] gap-12 px-5 py-16 md:px-10 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="space-y-12">
+        <div className="mx-auto grid max-w-[1180px] gap-12 px-5 py-10 md:px-10 md:py-16 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-8 md:space-y-12">
             {!found.length && <p className="text-muted">Nenhuma resposta com essas palavras. Tente outra busca, ou fale com a gente ao lado.</p>}
             {found.map((t) => (
               <div key={t.id}>
-                <h2 className="display flex items-center gap-3 text-2xl md:text-3xl"><span className="grid size-10 place-items-center rounded-xl bg-surface-2 text-brand"><Icon name={t.icon} size={20} weight="duotone" /></span>{t.title}</h2>
+                <h2 className="display flex items-center gap-3 text-xl md:text-3xl"><span className="grid size-10 place-items-center rounded-xl bg-surface-2 text-brand"><Icon name={t.icon} size={20} weight="duotone" /></span>{t.title}</h2>
                 <div className="mt-5 divide-y divide-line border-y border-line">
                   {t.items.map((it) => (
                     <details key={it.q} className="help-qa group" open={!!q && total <= 3}>
-                      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-5 text-lg font-semibold">
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 text-base font-semibold md:py-5 md:text-lg">
                         {it.q}
                         <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-full bg-surface-2 transition-transform duration-300 group-open:rotate-45"><Icon name="plus" size={16} /></span>
                       </summary>
-                      <p className="max-w-[62ch] pb-6 text-muted">{it.a}</p>
+                      <p className="max-w-[62ch] pb-5 text-muted md:pb-6">{it.a}</p>
                     </details>
                   ))}
                 </div>
@@ -104,7 +104,7 @@ export function HelpCenter() {
                   </a>
                 )}
                 <Link href="/entrar" className="btn btn-ghost w-full">Abrir um chamado no app</Link>
-                <Link href="/contato" className="btn btn-ghost w-full">Formulário de contato</Link>
+                <Link href="/contato" className="btn btn-ghost w-full max-md:hidden!">Formulário de contato</Link>
               </div>
               <p className="mt-5 text-xs text-muted">Em perigo, ligue para o 190.</p>
             </div>

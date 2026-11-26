@@ -1,19 +1,21 @@
-import { createHash, randomInt, timingSafeEqual } from "node:crypto";
+import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { getDb, schema as s } from "@/database";
 import { ApiError } from "./api";
-import { checkRateLimit } from "./auth";
+import { authSecret } from "./auth";
+import { rateLimitDb } from "./rate-limit-db";
 import { sendMail } from "./mail";
 
 export type CodePurpose = "email_verify" | "password_reset" | "email_change_old" | "reauth";
 
 const TTL_MS = 15 * 60_000;
 const MAX_ATTEMPTS = 5;
-const hash = (userId: string, code: string) => createHash("sha256").update(`${userId}:${code}`).digest();
+/** Resumo do código: HMAC-SHA-256 com a chave do servidor (AUTH_SECRET). Um vazamento só do banco não permite testar os 1 milhão de códigos offline. */
+const hash = (userId: string, code: string) => createHmac("sha256", authSecret()).update(`prumo:code:${userId}:${code}`).digest();
 
 /** Gera um código de 6 dígitos, invalida os anteriores e envia por e-mail. Só o resumo do código fica no banco. */
 export async function sendCode(user: { id: string; name: string }, email: string, purpose: CodePurpose) {
-  if (!checkRateLimit(`code:${user.id}`, 5, 60 * 60_000)) throw new ApiError(429, "Muitos códigos pedidos. Aguarde uma hora.");
+  if (!(await rateLimitDb(`code:${user.id}`, 5, 60 * 60_000))) throw new ApiError(429, "Muitos códigos pedidos. Aguarde uma hora.");
   const db = await getDb();
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
   await db.update(s.verificationCodes).set({ usedAt: new Date() })

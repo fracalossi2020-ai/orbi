@@ -33,26 +33,27 @@ export default function Motoristas() {
       </PageHead>
 
       <Dark className="!pt-0">
-        <Reveal><p className="mono-label text-on-deep-muted">Faça a conta</p><h2 className="display mt-3 max-w-[18ch] text-[clamp(2rem,4.2vw,3.6rem)]">Quanto fica com você?</h2></Reveal>
-        <Reveal className="mt-10 scroll-mt-24" delay={.05}><div id="ganhos" className="scroll-mt-24"><EarningsSim /></div></Reveal>
+        <Reveal><p className="mono-label text-on-deep-muted">Faça a conta</p><h2 className="display mt-3 max-w-[18ch] text-[clamp(1.8rem,4.2vw,3.6rem)]">Quanto fica com você?</h2></Reveal>
+        <Reveal className="mt-6 md:mt-10 scroll-mt-24" delay={.05}><div id="ganhos" className="scroll-mt-24"><EarningsSim /></div></Reveal>
       </Dark>
 
       <Dark className="bg-[color-mix(in_srgb,var(--deep)_88%,#000)]">
-        <Reveal><p className="mono-label text-on-deep-muted">Por que a Orbi</p><h2 className="display mt-3 max-w-[18ch] text-[clamp(2rem,4.2vw,3.6rem)]">Regras claras dos dois lados.</h2></Reveal>
-        <div className="mt-10"><Features items={BENEFITS} /></div>
+        <Reveal><p className="mono-label text-on-deep-muted">Por que a Orbi</p><h2 className="display mt-3 max-w-[18ch] text-[clamp(1.8rem,4.2vw,3.6rem)]">Regras claras dos dois lados.</h2></Reveal>
+        <div className="mt-6 md:mt-10"><Features items={BENEFITS} /></div>
       </Dark>
 
-      <Dark>
-        <Reveal><p className="mono-label text-on-deep-muted">Como começar</p><h2 className="display mt-3 text-[clamp(2rem,4.2vw,3.6rem)]">Quatro passos até a primeira corrida.</h2></Reveal>
-        <div className="relative mt-12">
+      {/* Celular: os quatro passos estão em /como-funciona; o botão do topo já leva ao cadastro. */}
+      <div className="max-md:hidden"><Dark>
+        <Reveal><p className="mono-label text-on-deep-muted">Como começar</p><h2 className="display mt-3 text-[clamp(1.8rem,4.2vw,3.6rem)]">Quatro passos até a primeira corrida.</h2></Reveal>
+        <div className="relative mt-6 md:mt-12">
         <span aria-hidden="true" className="absolute top-[34px] right-[12%] left-[12%] hidden h-px bg-[color-mix(in_srgb,var(--on-deep)_20%,transparent)] md:block" />
-        <ol className="relative grid gap-4 md:grid-cols-4">
+        <ol className="relative grid gap-4 max-md:gap-0 max-md:divide-y max-md:divide-[color-mix(in_srgb,var(--on-deep)_14%,transparent)] md:grid-cols-4">
           {STEPS.map(([icon, title, text], i) => (
             <Reveal as="li" key={title} delay={i * .07}>
-              <div data-glow className="glass-deep relative h-full rounded-[28px] p-6">
-                <span className="relative grid size-14 place-items-center rounded-2xl bg-on-deep text-deep"><Icon name={icon} size={26} weight="duotone" /></span>
-                <p className="mono-label mt-6 text-on-deep-muted">Passo {i + 1} de 4</p>
-                <h3 className="mt-1 text-lg font-semibold">{title}</h3>
+              <div data-glow className="glass-deep relative h-full rounded-[28px] p-6 max-md:rounded-none max-md:bg-transparent max-md:px-0 max-md:py-4 max-md:shadow-none max-md:backdrop-blur-none">
+                <span className="relative grid size-14 place-items-center rounded-2xl bg-on-deep text-deep max-md:hidden"><Icon name={icon} size={26} weight="duotone" /></span>
+                <p className="mono-label mt-6 text-on-deep-muted max-md:hidden">Passo {i + 1} de 4</p>
+                <h3 className="mt-1 text-lg font-semibold max-md:mt-0"><span className="md:hidden">{i + 1}. </span>{title}</h3>
                 <p className="mt-1.5 text-sm text-on-deep-muted">{text}</p>
               </div>
             </Reveal>
@@ -60,7 +61,7 @@ export default function Motoristas() {
         </ol>
         </div>
         <div className="mt-10"><Link href="/cadastro?perfil=motorista" className="btn btn-lg btn-on-deep">Começar meu cadastro <Icon name="arrow" size={18} /></Link></div>
-      </Dark>
+      </Dark></div>
     </>
   );
 }

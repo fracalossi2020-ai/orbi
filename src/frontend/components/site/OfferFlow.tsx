@@ -60,7 +60,8 @@ export function OfferFlow() {
         </motion.div>
       </div>
 
-      <PhoneFrame tone="light" className="relative">
+      <div className="h-[402px] w-full sm:h-auto">
+      <PhoneFrame tone="light" className="relative origin-top scale-[.68] sm:scale-100">
         <svg viewBox="0 0 260 570" className="absolute inset-0 size-full" aria-hidden="true">
           <rect width="260" height="570" fill="#EEF2F6" />
           <path d="M150 380 C 200 370, 250 400, 260 440 L260 570 L120 570 C 110 500, 120 420, 150 380 Z" fill="#DDEFE3" />
@@ -146,7 +147,8 @@ export function OfferFlow() {
           )}
         </AnimatePresence>
       </PhoneFrame>
-      <p className="mono-label relative mt-4 text-center text-[#536071]">Exemplo ilustrativo</p>
+      </div>
+      <p className="mono-label relative mt-2 sm:mt-4 text-center text-[#536071]">Exemplo ilustrativo</p>
     </div>
   );
 }

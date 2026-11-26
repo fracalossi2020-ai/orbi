@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Icon } from "@/frontend/components/Icon";
 import { api, ErrorNote, Field, useAction } from "@/frontend/components/ui";
+import { useBotGuard } from "@/frontend/components/BotGuard";
 import { MOTO_REQUIREMENTS } from "@/shared/moto-soon";
 
 /**
@@ -15,9 +16,10 @@ export function MotoSoon({ account = false, compact = false }: { account?: boole
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ name: "", email: "", consent: false });
   const { busy, error, run } = useAction();
+  const bot = useBotGuard();
 
   const send = () => run(async () => {
-    await api("/api/public/moto-interest", { body: account ? {} : { name: f.name, email: f.email, consent: f.consent } });
+    await api("/api/public/moto-interest", { body: account ? {} : { name: f.name, email: f.email, consent: f.consent, ...bot.values } });
     setSent(true);
   });
 
@@ -44,6 +46,7 @@ export function MotoSoon({ account = false, compact = false }: { account?: boole
           <p role="status" className="rounded-xl bg-surface px-4 py-3 text-sm font-semibold">Combinado! Avisamos você quando a moto chegar.</p>
         ) : account || open ? (
           <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); send(); }}>
+            {bot.field}
             {!account && (
               <>
                 <div className="grid gap-3 sm:grid-cols-2">

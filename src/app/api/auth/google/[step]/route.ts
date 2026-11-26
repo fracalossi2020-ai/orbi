@@ -5,18 +5,24 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 import { getDb, schema as s } from "@/database";
 import { ApiError, audit, body, publicRoute } from "@/backend/api";
-import { authSecret, checkRateLimit, cpfScan, cpfTaken, hashPassword, publicUser, revokeSessions, startSession } from "@/backend/auth";
+import { rateLimitDb } from "@/backend/rate-limit-db";
+import { authSecret, checkRateLimit, clearCookie, cpfScan, cpfTaken, hashPassword, publicUser, revokeSessions, startSession } from "@/backend/auth";
 import { clientIp } from "@/backend/security";
 import { finishLogin, googleEnabled, seal, startParams, unseal, type GoogleProfile } from "@/backend/google";
 import { isFullName, isValidCpf } from "@/shared/validation";
 import { cpfTakenMessage } from "@/shared/account";
 import { isRealProduction } from "@/shared/runtime-config";
+import { GOOGLE_COOKIES } from "@/shared/hosts";
+import { currentScope, linkTo, separatedHosts } from "@/backend/host";
 
-const FLOW = "prumo_google_flow";
-const PENDING = "prumo_google_new";
+// Modo separado: o fluxo vive só no app, com cookies __Host- (Secure, Path=/, sem Domain).
+const FLOW = separatedHosts() ? GOOGLE_COOKIES.flow : "prumo_google_flow";
+const PENDING = separatedHosts() ? GOOGLE_COOKIES.pending : "prumo_google_new";
 const HOME: Record<string, string> = { passenger: "/passageiro", driver: "/motorista", admin: "/admin", gestor: "/admin", atendente: "/admin" };
 const STAFF = new Set(["admin", "gestor", "atendente"]);
-const cookieOpts = (maxAge: number) => ({ httpOnly: true, sameSite: "lax" as const, secure: isRealProduction(process.env), path: "/", maxAge });
+const cookieOpts = (maxAge: number) => ({ httpOnly: true, sameSite: "lax" as const, secure: separatedHosts() ? true : isRealProduction(process.env), path: "/", maxAge });
+/** Endereço no app: absoluto (da configuração) no modo separado; senão relativo ao pedido. */
+const toApp = (req: Request, path: string) => (separatedHosts() ? linkTo("app", path) : new URL(path, req.url).toString());
 
 type Flow = { state: string; nonce: string; verifier: string; perfil?: string };
 
@@ -33,9 +39,13 @@ const homeFor = (role: string, perfil?: string) => (perfil === "motorista" && ro
 
 /** Volta para a tela de entrada com um motivo que ela sabe explicar, sem perder o perfil pedido (?perfil=motorista). */
 const back = (req: Request, reason: string, perfil?: string | null) =>
-  NextResponse.redirect(new URL(`/entrar?google=${reason}${perfil ? `&perfil=${encodeURIComponent(perfil)}` : ""}`, req.url), 303);
+  NextResponse.redirect(toApp(req, `/entrar?google=${reason}${perfil ? `&perfil=${encodeURIComponent(perfil)}` : ""}`), 303);
+
+/** Modo separado: o login do Google só existe no app (o painel entra com senha). */
+const onlyApp = async () => { if (separatedHosts() && (await currentScope()) !== "app") throw new ApiError(404, "Recurso não encontrado."); };
 
 export const GET = publicRoute<{ step: string }>(async ({ req, params }) => {
+  await onlyApp();
   const jar = await cookies();
 
   if (params.step === "status") {
@@ -57,7 +67,7 @@ export const GET = publicRoute<{ step: string }>(async ({ req, params }) => {
   if (params.step === "callback") {
     const url = new URL(req.url);
     const flow = await unseal<Flow>(jar.get(FLOW)?.value, authSecret(), "google-flow");
-    jar.delete(FLOW);
+    await clearCookie(FLOW);
     if (url.searchParams.get("error")) return back(req, "cancelado", flow?.perfil);
     const code = url.searchParams.get("code");
     if (!flow || !code || url.searchParams.get("state") !== flow.state) return back(req, "expirado", flow?.perfil);
@@ -89,30 +99,31 @@ export const GET = publicRoute<{ step: string }>(async ({ req, params }) => {
       await startSession(user.id);
       await audit(user.id, "google.login", "user", user.id);
       // Com verificação em duas etapas, o Google não basta: falta o código do aplicativo autenticador.
-      if (user.totpEnabledAt) return NextResponse.redirect(new URL(`/entrar?etapa=codigo${flow.perfil ? `&perfil=${encodeURIComponent(flow.perfil)}` : ""}`, req.url), 303);
-      return NextResponse.redirect(new URL(homeFor(user.role, flow.perfil), req.url), 303);
+      if (user.totpEnabledAt) return NextResponse.redirect(toApp(req, `/entrar?etapa=codigo${flow.perfil ? `&perfil=${encodeURIComponent(flow.perfil)}` : ""}`), 303);
+      return NextResponse.redirect(toApp(req, homeFor(user.role, flow.perfil)), 303);
     }
     // Conta nova: faltam o nome, o CPF e o aceite dos termos. O perfil do Google espera num cookie assinado.
     jar.set(PENDING, await seal(profile, authSecret(), 15, "google-new"), cookieOpts(900));
-    return NextResponse.redirect(new URL(`/entrar?google=novo${flow.perfil ? `&perfil=${encodeURIComponent(flow.perfil)}` : ""}`, req.url), 303);
+    return NextResponse.redirect(toApp(req, `/entrar?google=novo${flow.perfil ? `&perfil=${encodeURIComponent(flow.perfil)}` : ""}`), 303);
   }
   throw new ApiError(404, "Recurso não encontrado.");
 });
 
 export const POST = publicRoute<{ step: string }>(async ({ req, params }) => {
   if (params.step !== "complete") throw new ApiError(404, "Recurso não encontrado.");
+  await onlyApp();
   const jar = await cookies();
   const profile = await unseal<GoogleProfile>(jar.get(PENDING)?.value, authSecret(), "google-new");
   if (!profile) throw new ApiError(400, "O tempo para concluir passou. Toque em Continuar com Google de novo.");
   // Limite por conta Google e por endereço: o cookie pendente vale 15 min e não pode servir para testar CPFs em série.
-  if (!checkRateLimit(`google-complete:${profile.sub}`, 5) || !checkRateLimit(`register:${clientIp(req)}`, 20)) {
+  if (!checkRateLimit(`google-complete:${profile.sub}`, 5) || !(await rateLimitDb(`register:${clientIp(req)}`, 20))) {
     throw new ApiError(429, "Muitas tentativas. Aguarde alguns minutos.");
   }
   const v = await body(req, completeSchema);
   const db = await getDb();
   const [clash] = await db.select({ id: s.users.id }).from(s.users).where(eq(s.users.email, profile.email));
   if (clash) throw new ApiError(409, "Já existe uma conta com este e-mail. Entre por ela.");
-  const scan = cpfScan(clientIp(req));
+  const scan = await cpfScan(clientIp(req));
   if (scan === "limited") throw new ApiError(429, "Muitas tentativas. Aguarde alguns minutos.");
   if (await cpfTaken(v.cpf)) throw new ApiError(409, cpfTakenMessage(scan));
   const [user] = await db.insert(s.users).values({
@@ -120,7 +131,7 @@ export const POST = publicRoute<{ step: string }>(async ({ req, params }) => {
     // Sem senha escolhida: um valor aleatório. Se quiser entrar com senha, a pessoa cria pelo "Esqueci minha senha".
     passwordHash: await hashPassword(randomBytes(32).toString("hex")),
   }).returning();
-  jar.delete(PENDING);
+  await clearCookie(PENDING);
   await audit(user.id, "register", "user", user.id, { role: "passenger", via: "google" });
   await startSession(user.id);
   return publicUser(user);

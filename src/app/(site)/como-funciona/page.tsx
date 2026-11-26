@@ -17,8 +17,8 @@ export default function ComoFunciona() {
       </PageHead>
       <StoryPhone />
       <Dark>
-        <Reveal><p className="mono-label text-on-deep-muted">Para dirigir</p><h2 className="display mt-3 text-[clamp(2rem,4.2vw,3.6rem)]">E do outro lado da corrida.</h2></Reveal>
-        <div className="mt-10">
+        <Reveal><p className="mono-label text-on-deep-muted">Para dirigir</p><h2 className="display mt-3 text-[clamp(1.8rem,4.2vw,3.6rem)]">E do outro lado da corrida.</h2></Reveal>
+        <div className="mt-6 md:mt-10">
           <Steps items={[
             { title: "Cadastre-se", text: "Envie CNH, documento do veículo e uma foto do rosto." },
             { title: "Aguarde a análise", text: "Nossa equipe valida os documentos e aprova o cadastro." },
@@ -27,8 +27,8 @@ export default function ComoFunciona() {
           ]} />
         </div>
       </Dark>
-      <RideDemo />
-      <Tech />
+      {/* Celular: a demonstração e o texto de tecnologia só aparecem do tablet para cima. */}
+      <div className="max-md:hidden"><RideDemo /><Tech /></div>
     </>
   );
 }

@@ -66,13 +66,13 @@ export default function Ganhos() {
       )}
 
       <div role="tablist" aria-label="Período" className="mb-4 grid grid-cols-3 gap-1 rounded-2xl bg-surface-2 p-1">
-        {PERIODS.map(([v, l]) => <button key={v} type="button" role="tab" aria-selected={period === v} onClick={() => setPeriod(v)} className={`rounded-xl py-2 font-semibold transition-colors ${period === v ? "bg-surface shadow-sm" : "text-muted"}`}>{l}</button>)}
+        {PERIODS.map(([v, l]) => <button key={v} type="button" role="tab" aria-selected={period === v} onClick={() => setPeriod(v)} className={`max-md:min-h-11 rounded-xl py-2 font-semibold transition-colors ${period === v ? "bg-surface shadow-sm" : "text-muted"}`}>{l}</button>)}
       </div>
       <section className="card p-5">
         <dl className="space-y-2">
           <div className="flex justify-between"><dt>Valor bruto</dt><dd className="num font-semibold">{brl(s.grossCents)}</dd></div>
           <div className="flex justify-between text-muted"><dt>Comissão Orbi</dt><dd className="num">− {brl(s.commissionCents)}</dd></div>
-          <div className="display flex justify-between border-t border-line pt-3 text-3xl"><dt>Você recebeu</dt><dd className="num text-brand">{brl(s.netCents)}</dd></div>
+          <div className="display flex flex-wrap items-baseline justify-between gap-x-3 border-t border-line pt-3 text-[1.65rem] sm:text-3xl"><dt>Você recebeu</dt><dd className="num text-brand">{brl(s.netCents)}</dd></div>
         </dl>
         <p className="num mt-3 text-sm text-muted">{s.rides} corrida{s.rides === 1 ? "" : "s"} · {km(s.distanceM)}</p>
       </section>

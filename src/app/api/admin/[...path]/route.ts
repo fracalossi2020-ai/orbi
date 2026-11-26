@@ -8,9 +8,14 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { dataDir, getDb, schema as s } from "@/database";
 import { getSetting } from "@/database/seed";
-import { ApiError, assertCan, audit, body, requireUuid, route } from "@/backend/api";
+import { ApiError, assertCan, audit, body, requireStepUp, requireUuid, route } from "@/backend/api";
 import { cpfHmac, hashPassword, revokeSessions } from "@/backend/auth";
-import { fileHeaders, passwordProblem } from "@/backend/security";
+import { randomBytes } from "node:crypto";
+import { fileHeaders } from "@/backend/security";
+import { inviteStaff } from "@/backend/invites";
+import { rateLimitDb } from "@/backend/rate-limit-db";
+import { alertAdmins } from "@/backend/access";
+import { userChangeNeedsStepUp } from "@/shared/step-up";
 import { emailDomainExists } from "@/backend/verify";
 import { cancelScheduledRides, notify, rideSummaries, staffCancelRide, staffCloseRide } from "@/backend/rides";
 import { nextRideCursor, pageParams, ridesBefore, ridesOrder } from "@/backend/pagination";
@@ -22,7 +27,7 @@ import { debtLimitCents, orbiPix } from "@/backend/debt";
 import { debtLevel } from "@/shared/debt";
 import { publish, STAFF_CHANNEL, userChannel } from "@/backend/bus";
 import { STAFF } from "@/shared/permissions";
-import { staffUserView } from "@/shared/account";
+import { canSeeFullPii, maskCnhValue, maskCpfValue, staffUserView } from "@/shared/account";
 import { DEFAULT_WEIGHTS } from "@/shared/dispatch";
 import { brl } from "@/shared/pricing";
 import { isValidCpf } from "@/shared/validation";
@@ -69,18 +74,19 @@ export const GET = route<P>(async ({ req, user, params }) => {
     case "users": {
       assertCan(user, "users", "read");
       const rows = await db.select().from(s.users).orderBy(desc(s.users.createdAt)).limit(300);
-      return { rows: rows.map((u) => staffUserView(u)) };
+      return { rows: rows.map((u) => staffUserView(u, canSeeFullPii(user.role))) };
     }
     case "drivers": {
       assertCan(user, "drivers", "read");
       const rows = await db.select({ d: s.drivers, u: s.users }).from(s.drivers).innerJoin(s.users, eq(s.drivers.userId, s.users.id)).orderBy(desc(s.users.createdAt)).limit(300);
+      const fullPii = canSeeFullPii(user.role);
       const ids = rows.map((r) => r.d.userId);
       const [docs, vehicles] = ids.length ? await Promise.all([
         db.select().from(s.documents).where(inArray(s.documents.driverId, ids)).orderBy(desc(s.documents.createdAt)),
         db.select().from(s.vehicles).where(inArray(s.vehicles.driverId, ids)),
       ]) : [[], []];
       return { rows: rows.map(({ d, u }) => ({
-        id: d.userId, name: u.name, email: u.email, phone: u.phone, status: d.status, online: d.online, cpf: d.cpf, cnh: d.cnh, ridesTotal: d.ridesTotal,
+        id: d.userId, name: u.name, email: u.email, phone: u.phone, status: d.status, online: d.online, piiMasked: !fullPii, cpf: fullPii ? d.cpf : maskCpfValue(d.cpf), cnh: fullPii ? d.cnh : maskCnhValue(d.cnh), ridesTotal: d.ridesTotal,
         address: d.addressCep ? `${d.addressStreet}, ${d.addressNumber}${d.addressComplement ? ` (${d.addressComplement})` : ""} · ${d.addressDistrict} · ${d.addressCity}/${d.addressState} · CEP ${d.addressCep}` : null, addressVerified: d.addressVerified,
         rating: d.ratingCount ? d.ratingSum / d.ratingCount : null, reviewNote: d.reviewNote,
         birthDate: d.birthDate, cnhCategory: d.cnhCategory, cnhFirstLicenseAt: d.cnhFirstLicenseAt, cnhExpiresAt: d.cnhExpiresAt, cnhEar: d.cnhEar,
@@ -186,9 +192,10 @@ const withdrawalSchema = z.object({ status: z.enum(["paid", "rejected"]) });
 const settlementSchema = z.object({ status: z.enum(["confirmed", "rejected"]), reason: z.string().trim().max(300).optional() });
 // Resolver corrida presa: o motivo é obrigatório e vai para a auditoria. Encerrar cobra o valor estimado ou o informado (em centavos).
 const rideResolveSchema = z.object({ reason: z.string().trim().min(5, "Escreva o motivo (pelo menos 5 caracteres).").max(300), amountCents: z.number().int().positive().optional() });
+// Quem cria a conta NÃO escolhe a senha: a pessoa recebe um convite por e-mail e define a própria senha (e ativa a segunda etapa).
 const staffSchema = z.object({
   name: z.string().trim().min(3, "Informe o nome.").max(80, "O nome pode ter até 80 caracteres."), email: z.string().trim().toLowerCase().email("E-mail inválido."),
-  password: z.string().min(10, "A senha precisa de pelo menos 10 caracteres."), role: z.enum(["admin", "gestor", "atendente"]),
+  role: z.enum(["admin", "gestor", "atendente"]),
 });
 const positive = z.number().min(0).max(1000);
 const settingsSchema = z.object({
@@ -217,11 +224,21 @@ const settingsSchema = z.object({
   support: z.object({ whatsapp: z.string().transform((v) => v.replace(/\D/g, "")).pipe(z.string().regex(/^(|55[1-9]{2}9?\d{8})$/, "WhatsApp com 55, DDD e número, por exemplo 5531999999999.")) }).optional(),
 });
 
-export const POST = route<P>(async ({ req, user, params }) => {
+export const POST = route<P>(async ({ req, user, session, params }) => {
   const db = await getDb();
   const [what, id, sub] = params.path;
-  if (["drivers", "documents", "vehicles", "users", "tickets", "emergencies", "withdrawals", "settlements", "rides"].includes(what)) requireUuid(id);
+  if (["drivers", "documents", "vehicles", "users", "tickets", "emergencies", "withdrawals", "settlements", "rides", "pii"].includes(what)) requireUuid(id);
   switch (what) {
+    // "Revelar" CPF e CNH inteiros de uma conta (o atendente os vê mascarados na lista). Cada consulta fica na auditoria e tem limite por hora.
+    case "pii": {
+      assertCan(user, "users", "read");
+      if (!(await rateLimitDb(`pii:${user.id}`, 30, 60 * 60_000))) throw new ApiError(429, "Muitas consultas de CPF em pouco tempo. Aguarde um pouco.");
+      const [u] = await db.select({ cpf: s.users.cpf }).from(s.users).where(eq(s.users.id, id));
+      if (!u) throw new ApiError(404, "Conta não encontrada.");
+      const [d] = await db.select({ cpf: s.drivers.cpf, cnh: s.drivers.cnh }).from(s.drivers).where(eq(s.drivers.userId, id));
+      await audit(user.id, "user.cpf_view", "user", id, { cnh: !!d?.cnh });
+      return { cpf: u.cpf ?? d?.cpf ?? null, cnh: d?.cnh ?? null };
+    }
     case "drivers": {
       assertCan(user, "drivers", "write");
       const v = await body(req, reviewSchema);
@@ -273,6 +290,8 @@ export const POST = route<P>(async ({ req, user, params }) => {
       if (!target) throw new ApiError(404, "Conta não encontrada.");
       // Só administrador mexe em conta da equipe: um gestor não suspende quem está acima dele.
       if (STAFF.includes(target.role) && user.role !== "admin") throw new ApiError(403, "Só um administrador altera contas da equipe.");
+      // Suspender (ou mexer em conta da equipe) pede reautenticação recente.
+      if (userChangeNeedsStepUp(target.role, v.status)) requireStepUp(session);
       await db.update(s.users).set({ status: v.status }).where(eq(s.users.id, id));
       if (v.status === "suspended") {
         await db.update(s.drivers).set({ online: false }).where(eq(s.drivers.userId, id));
@@ -288,6 +307,7 @@ export const POST = route<P>(async ({ req, user, params }) => {
     case "cpf-release": {
       assertCan(user, "users", "write");
       if (user.role !== "admin") throw new ApiError(403, "Só um administrador libera CPF.");
+      requireStepUp(session);
       const v = await body(req, z.object({ cpf: z.string().transform((x) => x.replace(/\D/g, "")).refine(isValidCpf, "CPF inválido."), note: z.string().trim().min(3, "Diga o motivo (por exemplo, o número do chamado).").max(500) }));
       const [driver] = await db.select({ id: s.drivers.userId }).from(s.drivers).where(eq(s.drivers.cpf, v.cpf));
       if (driver) throw new ApiError(409, "Este CPF está num cadastro de motorista. Revise o cadastro em Motoristas.");
@@ -304,6 +324,7 @@ export const POST = route<P>(async ({ req, user, params }) => {
     case "cpf-block-release": {
       assertCan(user, "users", "write");
       if (user.role !== "admin") throw new ApiError(403, "Só um administrador libera o bloqueio de CPF.");
+      requireStepUp(session);
       const v = await body(req, z.object({ cpf: z.string().transform((x) => x.replace(/\D/g, "")).refine(isValidCpf, "CPF inválido."), note: z.string().trim().min(5, "Diga o motivo (pelo menos 5 caracteres).").max(500) }));
       const removed = await db.delete(s.deletedCpfBlocks).where(eq(s.deletedCpfBlocks.cpfHmac, cpfHmac(v.cpf))).returning({ h: s.deletedCpfBlocks.cpfHmac });
       if (!removed.length) throw new ApiError(404, "Este CPF não tem bloqueio de motorista.");
@@ -312,15 +333,18 @@ export const POST = route<P>(async ({ req, user, params }) => {
     }
     case "staff": {
       assertCan(user, "staff", "write");
+      requireStepUp(session);
       const v = await body(req, staffSchema);
       if (!(await emailDomainExists(v.email))) throw new ApiError(400, "Este e-mail não pode receber mensagens. Confira o que digitou.");
-      const weak = passwordProblem(v.password, [v.name.split(" ")[0], v.email]);
-      if (weak) throw new ApiError(400, weak);
       const [dup] = await db.select({ id: s.users.id }).from(s.users).where(eq(s.users.email, v.email));
       if (dup) throw new ApiError(409, "Já existe uma conta com este e-mail.");
-      const [row] = await db.insert(s.users).values({ name: v.name, email: v.email, role: v.role, passwordHash: await hashPassword(v.password), privacyAcceptedAt: new Date() }).returning();
-      await audit(user.id, "staff.create", "user", row.id, { role: v.role });
-      return { id: row.id };
+      // A conta nasce com uma senha aleatória que ninguém conhece; a pessoa define a dela pelo convite (24 h, uso único).
+      const [row] = await db.insert(s.users).values({ name: v.name, email: v.email, role: v.role, passwordHash: await hashPassword(randomBytes(32).toString("base64url")), privacyAcceptedAt: new Date() }).returning();
+      try { await inviteStaff(row.id, user.id, { name: v.name, email: v.email, role: v.role }); }
+      catch (e) { await db.delete(s.users).where(eq(s.users.id, row.id)); throw e; }
+      await audit(user.id, "staff.create", "user", row.id, { role: v.role, invited: true });
+      await alertAdmins("Nova conta da equipe criada", `${user.name} criou uma conta da equipe (${v.role}) para ${v.name} (${v.email}). O convite vale por 24 horas.\nSe você não esperava isto, confira o Histórico e suspenda a conta.`);
+      return { id: row.id, invited: true };
     }
     // Corrida presa: a equipe encerra (cobra o estimado ou o valor informado) ou cancela (sem cobrança). Admin e gestor.
     case "rides": {
@@ -370,6 +394,7 @@ export const POST = route<P>(async ({ req, user, params }) => {
     }
     case "withdrawals": {
       assertCan(user, "payments", "write");
+      requireStepUp(session);
       const v = await body(req, withdrawalSchema);
       // Transação com trava do motorista; pagar com saldo negativo é recusado (ver settleWithdrawal).
       const row = await settleWithdrawal(id, v.status, user.id);
@@ -379,6 +404,7 @@ export const POST = route<P>(async ({ req, user, params }) => {
     }
     case "settlements": {
       assertCan(user, "payments", "write");
+      requireStepUp(session);
       const v = await body(req, settlementSchema);
       const { settlement, balanceCents } = await resolveSettlement(id, v, user.id);
       await audit(user.id, `debt.settlement_${v.status}`, "debt_settlement", id, { driverId: settlement.driverId, amountCents: settlement.amountCents, reason: v.reason });
@@ -391,11 +417,18 @@ export const POST = route<P>(async ({ req, user, params }) => {
     }
     case "settings": {
       assertCan(user, "settings", "write");
+      requireStepUp(session);
       const v = await body(req, settingsSchema);
+      // Antes e depois de cada configuração mudada (limites, pesos, chave Pix da Orbi, formas de pagamento).
+      const before: Record<string, unknown> = {}, after: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(v)) {
-        if (value) await db.insert(s.settings).values({ key, value }).onConflictDoUpdate({ target: s.settings.key, set: { value } });
+        if (!value) continue;
+        const [old] = await db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, key));
+        before[key] = old?.value ?? null;
+        after[key] = value;
+        await db.insert(s.settings).values({ key, value }).onConflictDoUpdate({ target: s.settings.key, set: { value } });
       }
-      await audit(user.id, "settings.update", "settings", null, { keys: Object.keys(v) });
+      await audit(user.id, "settings.update", "settings", null, { keys: Object.keys(after), before, after });
       return { ok: true };
     }
     default: throw new ApiError(404, "Ação desconhecida.");

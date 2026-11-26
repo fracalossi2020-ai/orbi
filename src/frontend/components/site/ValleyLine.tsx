@@ -262,7 +262,7 @@ export function ValleyLine({ activeCities }: { activeCities: string[] }) {
 
   return (
     <section aria-labelledby="linha-titulo" className="relative overflow-hidden bg-bg text-ink">
-      <div className="relative mx-auto max-w-[1440px] px-5 pt-20 pb-16 md:px-10 md:pt-28">
+      <div className="relative mx-auto max-w-[1440px] px-5 pt-12 pb-10 md:px-10 md:pt-28 md:pb-16">
         <div className="grid gap-6 md:grid-cols-[1.2fr_1fr] md:items-end">
           <div>
             <p className="mono-label text-brand">Vale do Aço</p>
@@ -314,7 +314,7 @@ export function ValleyLine({ activeCities }: { activeCities: string[] }) {
             {placed.map((s) => (
               <button key={s.name + s.city} type="button" onClick={() => go(s)} aria-label={`Ir para ${s.name}, ${s.city}`}
                 style={{ left: `${(s.x / W) * 100}%`, top: `${(s.y / H) * 100}%` }}
-                className="group absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-full p-2.5">
+                className="group absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-full p-2.5 max-md:p-[15px]">
                 <span className={`block size-3.5 rounded-full border-[3px] border-primary bg-surface transition-transform duration-200 group-hover:scale-150 group-focus-visible:scale-150 ${busy === s.name ? "animate-pulse" : ""}`} />
                 <span className="pointer-events-none absolute top-full left-1/2 mt-1 -translate-x-1/2 rounded-md bg-surface px-2 py-0.5 text-xs font-semibold whitespace-nowrap opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
                   {busy === s.name ? "Buscando…" : s.name}
@@ -327,7 +327,7 @@ export function ValleyLine({ activeCities }: { activeCities: string[] }) {
       <p className="mono-label px-5 pt-2 text-center text-muted md:hidden">Arraste para o lado para ver as três cidades</p>
 
       {/* Lista de bairros, por cidade */}
-      <div className="relative mx-auto max-w-[1440px] px-5 pt-8 pb-20 md:px-10 md:pb-28">
+      <div className="relative mx-auto max-w-[1440px] px-5 pt-8 pb-12 md:px-10 md:pb-28">
         <div className={`grid gap-6 ${many ? "md:grid-cols-3" : ""}`}>
           {zones.map((z) => (
             <div key={z.city}>
@@ -336,7 +336,7 @@ export function ValleyLine({ activeCities }: { activeCities: string[] }) {
                 {stops.filter((s) => s.city === z.city).map((s) => (
                   <li key={s.name}>
                     <button type="button" onClick={() => go(s)}
-                      className={`min-h-10 rounded-full border px-4 text-sm font-semibold transition-colors hover:border-primary hover:bg-surface-2 ${near === s.name ? "border-primary bg-surface-2" : "border-line"}`}>
+                      className={`min-h-10 rounded-full border px-4 max-md:min-h-11 text-sm font-semibold transition-colors hover:border-primary hover:bg-surface-2 ${near === s.name ? "border-primary bg-surface-2" : "border-line"}`}>
                       {busy === s.name ? "Buscando…" : s.name}
                     </button>
                   </li>

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getDb, schema as s } from "@/database";
 import { ApiError, audit, body, publicRoute, staffMissingMfa } from "@/backend/api";
 import { checkRateLimit } from "@/backend/auth";
+import { dailyCap, looksLikeBot, newFormStamp } from "@/backend/bot-guard";
 import { clientIp } from "@/backend/security";
 import { rideView } from "@/backend/rides";
 import { publish, STAFF_CHANNEL } from "@/backend/bus";
@@ -14,6 +15,7 @@ import { NextResponse } from "next/server";
 import { publicPulse, publicSupport, publicTariffs } from "@/backend/public-data";
 import { getSetting } from "@/database/seed";
 import { MOTO_LEAD_KIND, MOTO_LEAD_MESSAGE } from "@/shared/moto-soon";
+import { FOOD_LEAD_KIND, FOOD_LEAD_MESSAGE, foodDemoOn } from "@/shared/food/flag";
 import { DEFAULT_DRIVER_RULES, type DriverRules, withDefaultRules } from "@/shared/driver-rules";
 
 type P = { path: string[] };
@@ -27,6 +29,8 @@ export const GET = publicRoute<P>(async ({ params }) => {
   if (what === "tariffs") return cache({ cities: await publicTariffs() }, 60);
   if (what === "pulse") return cache({ cities: await publicPulse() }, 20);
   if (what === "support") return cache(await publicSupport(), 300);
+  // Carimbo de "página aberta agora" para os formulários abertos (nunca em cache).
+  if (what === "form-stamp") return { stamp: newFormStamp() };
   if (what === "driver-rules") return cache(await getSetting<Partial<DriverRules>>(await getDb(), "driverRules", DEFAULT_DRIVER_RULES).then(withDefaultRules), 300);
   if (what === "share" && arg) {
     const db = await getDb();
@@ -47,8 +51,10 @@ const leadSchema = z.object({
   city: z.string().trim().max(80).optional(),
   message: z.string().trim().max(2000).optional(),
   consent: z.literal(true, { error: "Autorize o contato para enviar." }),
+  // Defesa contra robôs: campo-isca escondido e carimbo de tempo da página (veja shared/bot-guard.ts).
+  website: z.string().max(200).optional(), stamp: z.string().max(200).optional(),
 });
-const motoInterestSchema = leadSchema.pick({ name: true, email: true, consent: true });
+const motoInterestSchema = leadSchema.pick({ name: true, email: true, consent: true, website: true, stamp: true });
 const identitySchema = z.object({ identity: z.enum(["a", "b", "c", "d"]), official: z.boolean().default(false) });
 
 export const POST = publicRoute<P>(async ({ req, user, params }) => {
@@ -56,8 +62,11 @@ export const POST = publicRoute<P>(async ({ req, user, params }) => {
   const db = await getDb();
   if (what === "leads") {
     if (!checkRateLimit(`lead:${clientIp(req)}`, 10, 60 * 60_000)) throw new ApiError(429, "Muitos envios. Tente de novo mais tarde.");
-    const v = await body(req, leadSchema);
+    const { website, stamp, ...v } = await body(req, leadSchema);
+    // Robô (campo-isca, carimbo rápido/velho/forjado): responde que deu certo e não grava nada.
+    if (looksLikeBot({ website, stamp })) return { ok: true };
     if (!(await emailDomainExists(v.email))) throw new ApiError(400, "Este e-mail não pode receber mensagens. Confira o que digitou.");
+    await dailyCap("leads");
     await db.insert(s.leads).values(v);
     publish(STAFF_CHANNEL, "lead");
     return { ok: true };
@@ -70,13 +79,31 @@ export const POST = publicRoute<P>(async ({ req, user, params }) => {
     if (user) {
       v = { name: user.name, email: user.email ?? `conta-${user.id}@sem-email.orbi`, phone: user.phone };
     } else {
-      v = await body(req, motoInterestSchema);
+      const { website, stamp, ...rest } = await body(req, motoInterestSchema);
+      if (looksLikeBot({ website, stamp })) return { ok: true };
+      v = rest;
       if (!(await emailDomainExists(v.email))) throw new ApiError(400, "Este e-mail não pode receber mensagens. Confira o que digitou.");
     }
+    await dailyCap("moto-interest");
     // Um aviso por e-mail (contas só com celular usam um e-mail interno da conta): repetir o toque não duplica a lista.
     const [dup] = await db.select({ id: s.leads.id }).from(s.leads).where(and(eq(s.leads.kind, MOTO_LEAD_KIND), eq(s.leads.email, v.email)));
     if (!dup) {
       await db.insert(s.leads).values({ kind: MOTO_LEAD_KIND, name: v.name, email: v.email, phone: v.phone ?? undefined, city: "Ipatinga", message: MOTO_LEAD_MESSAGE, consent: true });
+      publish(STAFF_CHANNEL, "lead");
+    }
+    return { ok: true };
+  }
+  // Orbi Food (demonstração): "Quero minha loja no Orbi Food". Mesmo fluxo da moto (limite por IP, teto diário, um por e-mail),
+  // só com conta logada (o painel da loja exige login) e só com o interruptor ligado.
+  if (what === "food-interest") {
+    if (!foodDemoOn(process.env)) throw new ApiError(404, "Recurso não encontrado.");
+    if (!user) throw new ApiError(401, "Entre na sua conta para enviar.");
+    if (!checkRateLimit(`food-interest:${clientIp(req)}`, 10, 60 * 60_000)) throw new ApiError(429, "Muitos envios. Tente de novo mais tarde.");
+    await dailyCap("food-interest");
+    const email = user.email ?? `conta-${user.id}@sem-email.orbi`;
+    const [dup] = await db.select({ id: s.leads.id }).from(s.leads).where(and(eq(s.leads.kind, FOOD_LEAD_KIND), eq(s.leads.email, email)));
+    if (!dup) {
+      await db.insert(s.leads).values({ kind: FOOD_LEAD_KIND, name: user.name, email, phone: user.phone ?? undefined, city: "Ipatinga", message: FOOD_LEAD_MESSAGE, consent: true });
       publish(STAFF_CHANNEL, "lead");
     }
     return { ok: true };

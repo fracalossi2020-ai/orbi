@@ -53,12 +53,18 @@ fs.rmSync(dir, { recursive: true, force: true });
 
 const env = {
   ...process.env, PRUMO_DATA_DIR: dir, PRUMO_ALLOW_EMBEDDED_DB: "true", ALLOW_MANUAL_LOCATION: "true", AUTH_SECRET: "e2e-only-secret-e2e-only-secret-e2e-only",
-  PRUMO_ADMIN_PASSWORD: "e2e-admin-password", CEP_URL: "http://localhost:3101", PRUMO_SKIP_EMAIL_DNS: "true", PRUMO_MAIL_OUTBOX: "true",
+  PRUMO_ADMIN_PASSWORD: "e2e-admin-password", PRUMO_FOOD_DEMO: "true", CEP_URL: "http://localhost:3101", PRUMO_SKIP_EMAIL_DNS: "true", PRUMO_MAIL_OUTBOX: "true",
   GOOGLE_CLIENT_ID: "e2e-client", GOOGLE_CLIENT_SECRET: "e2e-secret", GOOGLE_AUTH_URL: `${OIDC}/auth`, GOOGLE_TOKEN_URL: `${OIDC}/token`,
   GOOGLE_JWKS_URL: `${OIDC}/jwks`, GOOGLE_ISSUER: OIDC,
   // Os testes entram no painel muitas vezes seguidas (o mesmo código do autenticador não vale duas vezes em 30 s)
   // e fazem centenas de ações do mesmo computador. A verificação em duas etapas tem teste próprio, com passageiro.
   PRUMO_REQUIRE_STAFF_MFA: process.env.PRUMO_REQUIRE_STAFF_MFA ?? "false", PRUMO_WRITE_LIMIT: "100000",
+  // O atraso de 1 a 16 s por senha errada deixaria os testes de bloqueio lentíssimos: só aqui ele some (produção recusa a variável).
+  PRUMO_LOGIN_DELAY_SCALE: "0",
+  // As ações de API dos testes não abrem página: sem carimbo nem tempo mínimo de formulário (a regra real fica no servidor 3104).
+  PRUMO_FORM_GUARD_RELAX: "true",
+  // Painel só para os endereços dos testes (10.x, ver apiClient/ownAddress em e2e/helpers.ts): e2e/acesso.spec.ts confere o 404 de fora.
+  ADMIN_ALLOWED_IPS: "10.0.0.0/8",
   // Atrás de um proxy confiável (os testes mandam x-forwarded-for para cada cliente ter o seu endereço).
   TRUST_PROXY_HOPS: "1",
   // A posição do motorista é conferida em "cheguei" e "encerrar"; só o tempo mínimo da viagem fica desligado.

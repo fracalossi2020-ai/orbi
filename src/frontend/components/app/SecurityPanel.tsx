@@ -9,7 +9,7 @@ type MfaState = { enabled: boolean; required: boolean; recoveryLeft: number };
 type Session = { id: string; device: string; createdAt: string; lastSeenAt: string; current: boolean };
 
 /** Códigos de recuperação: mostrados uma única vez, com opção de copiar e baixar. */
-function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void }) {
+export function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void }) {
   const [copied, setCopied] = useState(false);
   const text = `Códigos de recuperação da Orbi (cada um vale uma vez):\n\n${codes.join("\n")}\n`;
   return (

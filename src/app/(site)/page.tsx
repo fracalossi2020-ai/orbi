@@ -5,7 +5,7 @@ import { FinalCta } from "@/frontend/components/site/FinalCta";
 import { ConceptStrip, HomeFaq } from "@/frontend/components/site/Landing";
 import { homeFaq } from "@/frontend/lib/home-faq";
 import { getDb, schema as s } from "@/database";
-import { currentUser } from "@/backend/auth";
+import { siteUser } from "@/backend/auth";
 
 /** Só cidades ativas no painel aparecem; o raio desenha a área atendida no mapa. */
 async function cities() {
@@ -17,7 +17,7 @@ async function cities() {
 }
 
 export default async function Home() {
-  const [cityList, user] = await Promise.all([cities(), currentUser()]);
+  const [cityList, user] = await Promise.all([cities(), siteUser()]);
   const faq = homeFaq(cityList.map((c) => c.name));
   // Dados estruturados: o Google pode mostrar as respostas direto na busca.
   const faqLd = { "@context": "https://schema.org", "@type": "FAQPage", mainEntity: faq.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })) };

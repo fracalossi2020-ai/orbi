@@ -89,7 +89,7 @@ export function EmergencySheet({ rideId, as, vehicle, passengerName, shareToken,
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 p-0 sm:items-center sm:p-4" onClick={onClose} data-testid="sos-overlay">
-      <div role="dialog" aria-modal="true" aria-labelledby="sos-title" className="max-h-[92dvh] w-full max-w-md space-y-4 overflow-y-auto rounded-t-[28px] border border-line bg-surface p-5 text-ink sm:rounded-[28px]" onClick={(e) => e.stopPropagation()} data-testid="sos-sheet">
+      <div role="dialog" aria-modal="true" aria-labelledby="sos-title" className="max-h-[92dvh] w-full max-w-md space-y-4 overflow-y-auto rounded-t-[28px] border border-line bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] text-ink sm:rounded-[28px]" onClick={(e) => e.stopPropagation()} data-testid="sos-sheet">
         <div className="flex items-center gap-2">
           <span className="text-danger"><Icon name="sos" size={26} /></span>
           <h2 id="sos-title" className="display flex-1 text-2xl">Emergência</h2>

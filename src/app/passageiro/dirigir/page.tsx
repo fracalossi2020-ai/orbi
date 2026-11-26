@@ -84,8 +84,8 @@ export default function BecomeDriverPage() {
         </ul>
         <p className="mt-4 text-sm text-muted">No próximo passo você envia os documentos e os dados do veículo. A equipe analisa e avisa por aqui.</p>
         <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold">
-          <a className="underline" href="/motoristas/requisitos" target="_blank" rel="noreferrer">Ver todos os requisitos</a>
-          <a className="underline" href="/termos-motorista" target="_blank" rel="noreferrer">Termos do motorista</a>
+          <a className="inline-flex min-h-11 items-center underline md:min-h-0" href="/motoristas/requisitos" target="_blank" rel="noreferrer">Ver todos os requisitos</a>
+          <a className="inline-flex min-h-11 items-center underline md:min-h-0" href="/termos-motorista" target="_blank" rel="noreferrer">Termos do motorista</a>
         </div>
       </section>
 

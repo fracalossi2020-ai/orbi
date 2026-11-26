@@ -6,7 +6,9 @@ export const PASSENGER_APP: Role[] = ["passenger", "driver"];
 export type Resource =
   | "dashboard" | "users" | "drivers" | "documents" | "vehicles" | "rides" | "payments" | "withdrawals"
   | "tickets" | "coupons" | "campaigns" | "partners" | "plans" | "tariffs" | "regions" | "modalities"
-  | "categories" | "leads" | "reports" | "audit" | "settings" | "staff" | "privacy";
+  | "categories" | "leads" | "reports" | "audit" | "settings" | "staff" | "privacy"
+  /** Orbi Food (demonstração): só leitura para o gestor; o atendente não vê. */
+  | "food";
 
 const ATTENDANT_READ: Resource[] = ["users", "drivers", "documents", "vehicles", "rides", "payments", "partners", "regions", "leads", "privacy"];
 
@@ -14,7 +16,8 @@ export function can(role: Role, resource: Resource, mode: "read" | "write"): boo
   if (role === "admin") return true;
   if (role === "gestor") {
     if (resource === "staff") return false;
-    if (resource === "audit" || resource === "settings") return mode === "read";
+    // Dinheiro e regras comerciais: só o administrador altera tarifas e planos (comissão, preços); o gestor só vê.
+    if (resource === "audit" || resource === "settings" || resource === "tariffs" || resource === "plans" || resource === "food") return mode === "read";
     return true;
   }
   if (role === "atendente") {
