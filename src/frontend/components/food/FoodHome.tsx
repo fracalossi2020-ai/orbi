@@ -4,9 +4,12 @@ import { useMemo, useState } from "react";
 import { Badge, Empty } from "@/frontend/components/ui";
 import { Icon } from "@/frontend/components/Icon";
 import { IconGlyph } from "@/frontend/components/IconGlyph";
+import { FoodIcon, type FoodIconName } from "@/frontend/components/food/FoodIcons";
 import { BannerCarousel } from "@/frontend/components/food/BannerCarousel";
-import { FoodWordmark, HeartButton, Sheet } from "@/frontend/components/food/FoodUi";
-import { CATEGORY_GLYPH, FoodArt } from "@/frontend/components/food/parts";
+import { HeartButton, Sheet } from "@/frontend/components/food/FoodUi";
+import { FoodArt } from "@/frontend/components/food/parts";
+import { asset } from "@/frontend/lib/site-mode";
+import { categoryThumb } from "@/shared/food/photos";
 import { useFoodAccount, useFoodCity } from "@/frontend/lib/food-context";
 import { useFoodState, useNow, type FoodState } from "@/frontend/lib/food-storage";
 import { activeFilterCount, filterStores, NO_FILTERS, SORT_LABEL, type FoodFilters, type FoodMode, type FoodSort } from "@/shared/food/catalog";
@@ -19,16 +22,24 @@ import { brl } from "@/shared/pricing";
 
 const fromCents = (s: FoodStore) => Math.min(...s.menu.map((i) => i.priceCents));
 const feeText = (s: FoodStore) => (s.deliveryFeeCents === null ? "Só retirada" : s.deliveryFeeCents === 0 ? "Entrega grátis" : `Entrega ${brl(s.deliveryFeeCents)}`);
+const feeShort = (s: FoodStore) => (s.deliveryFeeCents === null ? "Só retirada" : s.deliveryFeeCents === 0 ? "Grátis" : `Entrega ${brl(s.deliveryFeeCents)}`);
 
-/** Botão redondo do topo (44 px) com selo de contagem opcional. */
-function TopIcon({ href, icon, label, count }: { href: string; icon: string; label: string; count?: number }) {
+/** Selo de contagem (carrinho, filtros): anel na cor do fundo para destacar. O azul fica só para ação e estado. */
+function CountBadge({ n }: { n: number }) {
+  return <span aria-hidden="true" className="absolute top-0.5 right-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-[var(--primary)] px-1 text-[10px] leading-none font-bold text-white ring-2 ring-[var(--bg)]">{n > 9 ? "9+" : n}</span>;
+}
+
+/** Ícone do topo: só o traço, sem fundo, com 44 px de toque. */
+function TopIcon({ href, icon, label, count }: { href: string; icon: FoodIconName; label: string; count?: number }) {
   return (
-    <Link href={href} aria-label={count ? `${label}, ${count} ${count === 1 ? "item" : "itens"}` : label} className="relative grid size-11 shrink-0 place-items-center rounded-full bg-surface-2 text-ink">
-      <Icon name={icon} size={22} />
-      {!!count && <span aria-hidden="true" className="absolute -top-0.5 -right-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-[var(--primary)] px-1 text-[11px] leading-none font-bold text-white">{count > 9 ? "9+" : count}</span>}
+    <Link href={href} aria-label={count ? `${label}, ${count} ${count === 1 ? "item" : "itens"}` : label} className="relative grid size-11 shrink-0 place-items-center rounded-full text-ink active:bg-surface-2">
+      <FoodIcon name={icon} size={24} />
+      {!!count && <CountBadge n={count} />}
     </Link>
   );
 }
+
+const SECTION = "text-lg font-semibold";
 
 function Chip({ on, onClick, children, role = "radio" }: { on: boolean; onClick: () => void; children: React.ReactNode; role?: "radio" | "checkbox" }) {
   return (
@@ -121,18 +132,19 @@ function CityPrompt({ current, found, onAnswer }: { current: FoodCityId; found: 
 function FeaturedCard({ s, open, fav, onFav }: { s: FoodStore; open: boolean | null; fav: boolean; onFav: () => void }) {
   const promo = promoOf(s);
   return (
-    <li className="relative w-[232px] shrink-0 snap-start">
+    <li className="relative w-[70%] max-w-[260px] shrink-0 snap-start">
       <Link href={`/passageiro/food/${s.id}`} className="block">
         <span className="relative block">
-          <FoodArt store={s} className="h-36 w-full rounded-3xl" />
-          {promo && <span className="absolute top-3 left-3 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-[#0356C5]">{promo}</span>}
-          {open === false && <span className="absolute bottom-3 left-3 rounded-full bg-black/60 px-2.5 py-1 text-xs font-semibold text-white">Fechada</span>}
+          <FoodArt store={s} className="h-32 w-full rounded-2xl" />
+          {promo && <span className="absolute top-2.5 left-2.5 rounded-md bg-[#0A3BFF] px-1.5 py-0.5 text-[11px] font-bold text-white">{promo}</span>}
+          {open === false && <span className="absolute bottom-2.5 left-2.5 rounded-md bg-black/65 px-1.5 py-0.5 text-[11px] font-semibold text-white">Fechada</span>}
         </span>
-        <span className="mt-2 block truncate pr-12 font-semibold">{s.name}</span>
-        <span className="block text-sm text-muted"><Icon name="star" size={13} weight="fill" className="mr-0.5 inline text-[#F5A524]" />{ratingOf(s).toFixed(1).replace(".", ",")} · {s.etaMin}-{s.etaMax} min</span>
-        <span className="block text-sm"><span className="font-semibold">{feeText(s)}</span><span className="text-muted"> · a partir de {brl(fromCents(s))}</span></span>
+        <span className="mt-2 block truncate font-semibold">{s.name}</span>
+        <span className="block truncate text-[13px] text-muted">
+          <Icon name="star" size={12} weight="fill" className="mr-0.5 inline text-[#F5A524]" />{ratingOf(s).toFixed(1).replace(".", ",")} · {s.etaMin}-{s.etaMax} min · <span className={s.deliveryFeeCents === 0 ? "font-medium text-ok" : ""}>{feeShort(s)}</span>
+        </span>
       </Link>
-      <HeartButton on={fav} onToggle={onFav} label={s.name} className="absolute top-1 right-0 bg-surface/90" />
+      <HeartButton on={fav} onToggle={onFav} label={s.name} overlay className="absolute top-0 right-0" />
     </li>
   );
 }
@@ -140,21 +152,22 @@ function FeaturedCard({ s, open, fav, onFav }: { s: FoodStore; open: boolean | n
 function StoreRow({ s, open, fav, onFav }: { s: FoodStore; open: boolean | null; fav: boolean; onFav: () => void }) {
   const promo = promoOf(s);
   return (
-    <li className="card relative">
-      <Link href={`/passageiro/food/${s.id}`} className="flex gap-3 p-3 pr-14">
-        <FoodArt store={s} compact className="size-24 rounded-2xl" />
-        <span className="min-w-0 flex-1 py-0.5">
-          <span className="block truncate font-semibold">{s.name}</span>
-          <span className="block truncate text-sm text-muted">{categoryLabel(s.category)} · {s.etaMin}-{s.etaMax} min</span>
-          <span className="block text-sm text-muted"><Icon name="star" size={13} weight="fill" className="mr-0.5 inline text-[#F5A524]" />{ratingOf(s).toFixed(1).replace(".", ",")}</span>
-          <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-            <span className="font-semibold">{feeText(s)}</span>
-            {open !== null && <Badge tone={open ? "ok" : "neutral"}>{open ? "Aberta" : "Fechada"}</Badge>}
-            {promo && <Badge tone="brand">{promo}</Badge>}
+    <li className="relative">
+      <Link href={`/passageiro/food/${s.id}`} className="flex gap-3 py-3 pr-9">
+        <span className="relative shrink-0">
+          <FoodArt store={s} compact className="size-20 rounded-2xl" />
+          {open === false && <span className="absolute inset-0 grid place-items-center rounded-2xl bg-black/55 text-[11px] font-bold text-white">Fechada</span>}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-base font-semibold">{s.name}</span>
+          <span className="mt-0.5 block truncate text-sm text-muted"><Icon name="star" size={13} weight="fill" className="mr-0.5 inline text-[#F5A524]" />{ratingOf(s).toFixed(1).replace(".", ",")} · {categoryLabel(s.category)} · {s.etaMin}-{s.etaMax} min</span>
+          <span className="mt-1 flex items-center gap-2 text-sm">
+            <span className={`truncate ${s.deliveryFeeCents === 0 ? "font-medium text-ok" : "text-ink"}`}>{feeText(s)}</span>
+            {promo && <span className="shrink-0 rounded-md bg-[#0A3BFF] px-1.5 py-0.5 text-[11px] font-bold text-white">{promo}</span>}
           </span>
         </span>
       </Link>
-      <HeartButton on={fav} onToggle={onFav} label={s.name} className="absolute top-1.5 right-1" />
+      <HeartButton on={fav} onToggle={onFav} label={s.name} className="absolute top-2 right-[-6px]" />
     </li>
   );
 }
@@ -192,22 +205,19 @@ export function FoodHome() {
   const nFilters = activeFilterCount(f);
 
   return (
-    <div className="space-y-5">
-      <div className="space-y-3">
-        <FoodWordmark />
-        <header className="flex items-center gap-2">
-          <span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-full text-sm font-bold text-white" style={{ background: "var(--grad)", textShadow: "0 1px 2px rgb(0 0 0 / .25)" }}>{account?.initials ?? ""}</span>
-          <button type="button" onClick={() => setSheet("city")} aria-haspopup="dialog" data-testid="food-city" className="min-h-11 min-w-0 flex-1 rounded-2xl px-2 text-left">
-            <span className="block text-xs text-muted">{account ? `Olá, ${account.firstName}` : "Entregar em"}</span>
-            <span className="flex items-center gap-1 font-semibold"><span className="truncate">{cityName(city)}</span><Icon name="caret" size={14} className="shrink-0 text-brand" /></span>
-          </button>
-          <nav aria-label="Atalhos do Food" className="flex shrink-0 gap-1.5">
-            <TopIcon href="/passageiro/food/cupons" icon="ticket" label="Cupons" />
-            <TopIcon href="/passageiro/food/pedidos" icon="clipboard" label="Meus pedidos" />
-            <TopIcon href="/passageiro/food/carrinho" icon="bag" label="Carrinho e favoritos" count={cartCount(state)} />
-          </nav>
-        </header>
-      </div>
+    <div className="space-y-6">
+      <h1 className="sr-only">Orbi Food</h1>
+      <header className="flex items-center justify-between gap-3">
+        <button type="button" onClick={() => setSheet("city")} aria-haspopup="dialog" data-testid="food-city" aria-label={`Entregar em ${cityName(city)}. Trocar cidade`} className="min-h-11 min-w-0 rounded-xl text-left">
+          <span className="block text-xs text-muted">{account ? `Olá, ${account.firstName} · entregar em` : "Entregar em"}</span>
+          <span className="flex items-center gap-1 text-base font-semibold"><FoodIcon name="pin" size={17} className="shrink-0 text-ink" /><span className="truncate">{cityName(city)}</span><Icon name="caret" size={13} className="shrink-0 text-muted" /></span>
+        </button>
+        <nav aria-label="Atalhos do Food" className="-mr-2 flex shrink-0">
+          <TopIcon href="/passageiro/food/cupons" icon="coupon" label="Cupons" />
+          <TopIcon href="/passageiro/food/pedidos" icon="orders" label="Meus pedidos" />
+          <TopIcon href="/passageiro/food/carrinho" icon="cart" label="Carrinho e favoritos" count={cartCount(state)} />
+        </nav>
+      </header>
 
       {active && activeStatus && (
         <Link href={`/passageiro/food/pedido/${active.id}`} className="card flex items-center gap-3 p-4" data-testid="food-active-order">
@@ -220,15 +230,13 @@ export function FoodHome() {
         </Link>
       )}
 
-      <div className="flex gap-2">
-        <div className="relative min-w-0 flex-1">
-          <Icon name="search" size={20} className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-muted" />
-          <input type="search" className="input h-12 w-full" style={{ paddingLeft: "2.75rem" }} placeholder="Buscar loja ou prato" aria-label="Buscar loja ou prato" value={q} onChange={(e) => setQ(e.target.value)} />
-        </div>
+      <div className="relative">
+        <FoodIcon name="search" size={20} className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-muted" />
+        <input type="search" className="input h-12 w-full" style={{ paddingLeft: "2.75rem", paddingRight: "3.25rem" }} placeholder="Buscar loja ou prato" aria-label="Buscar loja ou prato" value={q} onChange={(e) => setQ(e.target.value)} />
         <button type="button" onClick={() => setSheet("filters")} aria-haspopup="dialog" aria-label={nFilters ? `Filtros, ${nFilters} ativos` : "Filtros"} data-testid="food-filters"
-          className="relative grid size-12 shrink-0 place-items-center rounded-full bg-surface-2">
-          <Icon name="sliders" size={22} />
-          {nFilters > 0 && <span aria-hidden="true" className="absolute -top-0.5 -right-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-[var(--primary)] px-1 text-[11px] leading-none font-bold text-white">{nFilters}</span>}
+          className="absolute top-1/2 right-0.5 grid size-11 -translate-y-1/2 place-items-center rounded-full text-ink">
+          <FoodIcon name="filter" size={22} />
+          {nFilters > 0 && <CountBadge n={nFilters} />}
         </button>
       </div>
 
@@ -239,8 +247,9 @@ export function FoodHome() {
           const on = f.category === k.id;
           return (
             <button key={k.id} type="button" aria-pressed={on} onClick={() => setF({ ...f, category: on ? null : k.id })} className="flex w-[76px] shrink-0 flex-col items-center gap-1.5 py-1">
-              <span className={`grid size-16 place-items-center rounded-full transition-colors ${on ? "bg-[var(--primary)] ring-2 ring-[var(--primary)] ring-offset-2 ring-offset-bg" : "bg-tint"}`}>
-                <IconGlyph name={CATEGORY_GLYPH[k.id]} size={32} bare tone={on ? "glass" : "brand"} />
+              <span className={`relative block size-16 overflow-hidden rounded-full transition-shadow motion-reduce:transition-none ${on ? "ring-[3px] ring-[var(--primary)] ring-offset-2 ring-offset-bg" : "ring-1 ring-line"}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element -- miniatura local 160x160 em WebP */}
+                <img src={asset(categoryThumb(k.id))} alt="" width={64} height={64} loading="lazy" decoding="async" draggable={false} className="size-full object-cover" />
               </span>
               <span className={`text-xs font-semibold ${on ? "text-brand" : "text-ink"}`}>{k.label}</span>
             </button>
@@ -250,7 +259,7 @@ export function FoodHome() {
 
       {!filtering && featured.length > 0 && (
         <section aria-label="Destaques" className="space-y-3">
-          <h2 className="display text-xl">Destaques</h2>
+          <h2 className={SECTION}>Destaques</h2>
           <ul className="-mx-4 flex snap-x scroll-px-4 gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {featured.map((s) => <FeaturedCard key={s.id} s={s} open={openOf(s)} fav={isFav(s.id)} onFav={() => toggleFav(s.id)} />)}
           </ul>
@@ -259,7 +268,7 @@ export function FoodHome() {
 
       <section aria-label="Lojas" className="space-y-3">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 className="display text-xl">Lojas em {cityName(city)}</h2>
+          <h2 className={SECTION}>Lojas em {cityName(city)}</h2>
           <span className="text-sm text-muted">{stores.length} {stores.length === 1 ? "loja" : "lojas"}</span>
         </div>
         {stores.length === 0 ? (
@@ -268,7 +277,7 @@ export function FoodHome() {
             {nFilters > 0 && <button type="button" className="mt-3 block min-h-11 w-full font-semibold text-brand" onClick={() => setF(NO_FILTERS)}>Limpar filtros</button>}
           </Empty>
         ) : (
-          <ul className="space-y-3">
+          <ul className="divide-y divide-line">
             {stores.map((s) => <StoreRow key={s.id} s={s} open={openOf(s)} fav={isFav(s.id)} onFav={() => toggleFav(s.id)} />)}
           </ul>
         )}

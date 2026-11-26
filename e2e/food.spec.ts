@@ -20,7 +20,8 @@ test("Orbi Food no celular: aba, loja, opcional, checkout, acompanhamento, paine
   const bar = page.getByRole("navigation", { name: "Passageiro" }).last();
   await bar.getByRole("link", { name: "Food" }).click();
   await page.waitForURL("**/passageiro/food");
-  await expect(page.getByTestId("food-demo-banner")).toContainText("DEMONSTRAÇÃO · dados fictícios");
+  // A aba do passageiro não mostra a faixa de demonstração (o painel da loja e o /admin/food mostram).
+  await expect(page.getByTestId("food-demo-banner")).toHaveCount(0);
   // A loja aparece nos destaques e na lista: o primeiro link basta.
   await expect(page.getByRole("link", { name: /Forno da Serra Pizzaria/ }).first()).toBeVisible();
   await expect(page.getByTestId("food-city")).toContainText("Ipatinga");

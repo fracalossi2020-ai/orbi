@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Badge, Empty, Note } from "@/frontend/components/ui";
 import { Icon } from "@/frontend/components/Icon";
 import { BackLink, BottomBar, FoodArt, Stepper } from "@/frontend/components/food/parts";
-import { FoodWordmark, HeartButton } from "@/frontend/components/food/FoodUi";
+import { HeartButton } from "@/frontend/components/food/FoodUi";
 import { useFoodState, useNow } from "@/frontend/lib/food-storage";
 import { categoryLabel, storeById } from "@/shared/food/demo-data";
 import { brasiliaMinutes, isOpenAt, turnLabel } from "@/shared/food/hours";
@@ -52,7 +52,7 @@ function ItemSheet({ item, canOrder, onClose, onAdd }: { item: FoodItem; canOrde
               <fieldset key={g.id}>
                 <legend className="mb-2 flex w-full items-center justify-between gap-2 font-semibold">
                   <span>{g.label}</span>
-                  <Badge tone={g.required ? "brand" : "neutral"}>{g.required ? "Obrigatório" : g.max > 1 ? `Até ${g.max}` : "Opcional"}</Badge>
+                  <Badge tone="neutral">{g.required ? "Obrigatório" : g.max > 1 ? `Até ${g.max}` : "Opcional"}</Badge>
                 </legend>
                 <div className="divide-y divide-line rounded-2xl bg-surface-2">
                   {g.options.map((o) => {
@@ -123,20 +123,17 @@ export function StoreView({ storeId }: { storeId: string }) {
     <div className={`space-y-5 ${count ? "pb-24" : ""}`}>
       <div className="flex items-center justify-between gap-3">
         <BackLink href="/passageiro/food">← Lojas</BackLink>
-        <FoodWordmark className="text-lg" />
       </div>
       <div className="relative">
-        <FoodArt store={store} className="h-36 rounded-3xl" />
-        <HeartButton on={favStore} onToggle={toggleStore} label={store.name} className="absolute top-2 right-2 bg-surface/90" />
+        <FoodArt store={store} className="h-44 rounded-3xl" />
+        <HeartButton on={favStore} onToggle={toggleStore} label={store.name} overlay className="absolute top-2 right-2" />
       </div>
       <div>
-        <h1 className="display text-2xl">{store.name}</h1>
+        <h1 className="text-2xl font-semibold">{store.name}</h1>
         <p className="mt-1 text-sm text-muted">{store.blurb}</p>
-        <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-          <span>{categoryLabel(store.category)}</span>
-          <span>{store.etaMin}-{store.etaMax} min</span>
-          <span className="font-semibold">{store.deliveryFeeCents === null ? "Só retirada" : `Entrega ${brl(store.deliveryFeeCents)}`}</span>
-          {isOpen !== null && <Badge tone={isOpen ? "ok" : "neutral"}>{isOpen ? "Aberta" : "Fechada"}</Badge>}
+        <p className="mt-2 text-sm">
+          {categoryLabel(store.category)} · {store.etaMin}-{store.etaMax} min · <span className={store.deliveryFeeCents === 0 ? "font-medium text-ok" : "font-medium"}>{store.deliveryFeeCents === null ? "Só retirada" : store.deliveryFeeCents === 0 ? "Entrega grátis" : `Entrega ${brl(store.deliveryFeeCents)}`}</span>
+          {isOpen === false && <span className="ml-2 rounded-md bg-surface-2 px-1.5 py-0.5 text-xs font-semibold text-muted">Fechada</span>}
         </p>
         <p className="mt-1 text-sm text-muted">Pedido mínimo {brl(store.minOrderCents)} · {turns.map(turnLabel).join(" e ") || "sem horário"}</p>
       </div>
@@ -145,7 +142,7 @@ export function StoreView({ storeId }: { storeId: string }) {
 
       {sections.map(([title, items]) => (
         <section key={title} aria-label={title}>
-          <h2 className="mb-2 font-semibold">{title}</h2>
+          <h2 className="mb-2 text-lg font-semibold">{title}</h2>
           <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
             {items.map((i) => (
               <li key={i.id} className="flex items-center">
@@ -155,7 +152,7 @@ export function StoreView({ storeId }: { storeId: string }) {
                     <span className="mt-0.5 line-clamp-2 block text-sm text-muted">{i.description}</span>
                     <span className="mt-1 block text-sm font-semibold">{brl(i.priceCents)}</span>
                   </span>
-                  <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-tint text-brand"><Icon name="plus" size={18} /></span>
+                  <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-surface-2 text-ink"><Icon name="plus" size={18} /></span>
                 </button>
                 <HeartButton on={!!state?.favItems.includes(`${store.id}:${i.id}`)} onToggle={() => toggleItem(i.id)} label={i.name} />
               </li>

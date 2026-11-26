@@ -12,8 +12,6 @@ import { itemCount, lineTotalCents, subtotalCents } from "@/shared/food/pricing"
 import type { FoodStatus } from "@/shared/food/types";
 import { brl } from "@/shared/pricing";
 
-const TONE_BG = ["linear-gradient(135deg, #0A1E3D, #0356C5)", "linear-gradient(135deg, #0356C5, #0A3BFF)", "linear-gradient(135deg, #0B6BFF, #0A3BFF)", "linear-gradient(135deg, #02060E, #0A3BFF 120%)"];
-
 // ------------------------------------------------------------------ cupons
 
 function CouponCard({ c }: { c: FoodCoupon }) {
@@ -23,16 +21,15 @@ function CouponCard({ c }: { c: FoodCoupon }) {
   };
   return (
     <li className="card overflow-hidden" data-testid="coupon">
-      <div className="flex items-center gap-3 px-4 py-3 text-white" style={{ background: TONE_BG[c.tone] }}>
-        <Icon name="ticket" size={26} weight="duotone" />
-        <h2 className="min-w-0 flex-1 font-bold">{c.title}</h2>
-        <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-[11px] font-bold tracking-wide uppercase">Demonstração</span>
+      <div className="flex items-center gap-3 px-4 pt-4">
+        <span aria-hidden="true" className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-2 text-ink"><Icon name="ticket" size={22} /></span>
+        <h2 className="min-w-0 flex-1 text-base font-semibold">{c.title}</h2>
       </div>
-      <div className="space-y-3 p-4">
+      <div className="space-y-3 p-4 pt-3">
         <p className="text-sm">{c.rule}</p>
         <p className="text-sm text-muted">Válido até {c.validUntil}</p>
         <div className="flex items-center gap-3">
-          <span className="min-h-11 flex-1 rounded-2xl border border-dashed border-[var(--primary)] bg-tint px-4 py-2.5 text-center font-bold tracking-widest">{c.code}</span>
+          <span className="min-h-11 flex-1 rounded-2xl border border-dashed border-line bg-surface-2 px-4 py-2.5 text-center font-bold tracking-widest">{c.code}</span>
           <button type="button" className="btn btn-soft" onClick={copy}>{copied ? "Copiado" : "Copiar"}</button>
         </div>
       </div>
@@ -76,7 +73,7 @@ function ReviewSheet({ order, onClose, state, update }: { order: FoodOrder; onCl
         {tried && stars < 1 && <p role="alert" className="text-sm font-medium text-danger">Escolha de 1 a 5 estrelas.</p>}
         <label className="block"><span className="mb-1.5 block text-sm font-semibold">Comentário (opcional)</span>
           <textarea className="input min-h-28 w-full rounded-2xl" maxLength={500} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Como foi o pedido?" /></label>
-        <p className="text-xs text-muted">Demonstração: a avaliação fica só neste aparelho.</p>
+        <p className="text-xs text-muted">A avaliação fica só neste aparelho.</p>
       </div>
     </Sheet>
   );
@@ -100,7 +97,7 @@ function ComplaintSheet({ order, onClose, update }: { order: FoodOrder; onClose:
         <label className="block"><span className="mb-1.5 block text-sm font-semibold">O que aconteceu</span>
           <textarea className="input min-h-28 w-full rounded-2xl" maxLength={1000} value={text} onChange={(e) => setText(e.target.value)} placeholder="Conte com detalhes (mínimo 10 letras)." aria-invalid={tried && text.trim().length < 10} /></label>
         {tried && text.trim().length < 10 && <p role="alert" className="text-sm font-medium text-danger">Descreva o que aconteceu, com pelo menos 10 letras.</p>}
-        <p className="text-xs text-muted">Demonstração: a reclamação não é enviada a ninguém; fica só neste aparelho.</p>
+        <p className="text-xs text-muted">A reclamação fica só neste aparelho.</p>
       </div>
     </Sheet>
   );
@@ -112,7 +109,7 @@ function OrderCard({ o, now, state, update }: { o: FoodOrder; now: number } & St
   const done = status === "delivered" || status === "picked_up";
   const review = state.reviews[o.id];
   const complaint = state.complaints[o.id];
-  const tone = done ? "ok" : status === "cancelled" ? "danger" : "brand";
+  const tone = done ? "ok" : status === "cancelled" ? "danger" : "neutral";
   return (
     <li className="card space-y-3 p-4" data-testid={`my-order-${o.code}`}>
       <div className="flex items-start gap-3">
@@ -143,10 +140,10 @@ function OrderCard({ o, now, state, update }: { o: FoodOrder; now: number } & St
       )}
 
       <div className="flex flex-wrap gap-2">
-        {!isFinal(status) && <Link href={`/passageiro/food/pedido/${o.id}`} className="btn btn-primary min-h-11 flex-1">Acompanhar</Link>}
-        {done && <button type="button" className="btn btn-soft min-h-11 flex-1" onClick={() => setSheet("review")}>{review ? "Editar avaliação" : "Avaliar pedido"}</button>}
-        {status !== "cancelled" && !complaint && <button type="button" className="btn btn-ghost min-h-11 flex-1" onClick={() => setSheet("complaint")}>Reclamar da loja</button>}
-        {isFinal(status) && <Link href={`/passageiro/food/${o.storeId}`} className="btn btn-ghost min-h-11 flex-1">Pedir de novo</Link>}
+        {!isFinal(status) && <Link href={`/passageiro/food/pedido/${o.id}`} className="btn btn-primary min-h-11 basis-full">Acompanhar</Link>}
+        {done && <button type="button" className="btn btn-soft min-h-11 flex-1 px-3 text-sm" onClick={() => setSheet("review")}>{review ? "Editar avaliação" : "Avaliar pedido"}</button>}
+        {status !== "cancelled" && !complaint && <button type="button" className="btn btn-soft min-h-11 flex-1 px-3 text-sm" onClick={() => setSheet("complaint")}>Reclamar da loja</button>}
+        {isFinal(status) && <Link href={`/passageiro/food/${o.storeId}`} className="btn btn-primary min-h-11 basis-full order-first">Pedir de novo</Link>}
       </div>
       {sheet === "review" && <ReviewSheet order={o} state={state} update={update} onClose={() => setSheet(null)} />}
       {sheet === "complaint" && <ComplaintSheet order={o} state={state} update={update} onClose={() => setSheet(null)} />}

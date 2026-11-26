@@ -19,8 +19,7 @@ export function SubHeader({ title, back = "/passageiro/food" }: { title: string;
   return (
     <header className="flex items-center gap-2">
       <Link href={back} aria-label="Voltar ao Food" className="grid size-11 shrink-0 place-items-center rounded-full bg-surface-2"><Icon name="back" size={20} /></Link>
-      <h1 className="display min-w-0 flex-1 truncate text-2xl">{title}</h1>
-      <FoodWordmark className="text-lg" />
+      <h1 className="min-w-0 flex-1 truncate text-xl font-semibold">{title}</h1>
     </header>
   );
 }
@@ -51,11 +50,13 @@ export function Sheet({ title, onClose, children, testId, footer }: { title: str
 }
 
 /** Coração de favorito, 44 px de toque. Fica ao lado do link do cartão, nunca dentro dele. */
-export function HeartButton({ on, onToggle, label, className = "" }: { on: boolean; onToggle: () => void; label: string; className?: string }) {
+export function HeartButton({ on, onToggle, label, className = "", overlay = false }: { on: boolean; onToggle: () => void; label: string; className?: string; overlay?: boolean }) {
   return (
     <button type="button" aria-pressed={on} aria-label={on ? `Remover ${label} dos favoritos` : `Favoritar ${label}`} onClick={onToggle}
-      className={`grid size-11 shrink-0 place-items-center rounded-full transition-colors ${on ? "text-[#E5484D]" : "text-muted"} ${className}`}>
-      <Icon name="heart" size={22} weight={on ? "fill" : "regular"} />
+      className={`grid size-11 shrink-0 place-items-center rounded-full transition-colors ${on ? "text-[#E5484D]" : overlay ? "text-[#3B4658]" : "text-muted"} ${className}`}>
+      {/* overlay: sobre foto, o botão de 44 px leva um disco branco de 36 px */}
+      {overlay ? <span className="grid size-9 place-items-center rounded-full bg-white/95 shadow-[0_1px_6px_rgb(0_0_0/.22)]"><Icon name="heart" size={20} weight={on ? "fill" : "regular"} /></span>
+        : <Icon name="heart" size={22} weight={on ? "fill" : "regular"} />}
     </button>
   );
 }

@@ -305,13 +305,17 @@ export const FOOD_COUPONS: FoodCoupon[] = [
   { id: "noite", title: "Frete grátis à noite", rule: "Pedidos feitos entre 19h e 22h, nas lojas com entrega própria.", code: "NOITE", validUntil: "31/01/2027", tone: 1 },
 ];
 
-/** Banners promocionais do carrossel da home (fictícios). `to`: "cupons" abre a tela de cupons; senão é o id de uma loja. */
-export type FoodBanner = { id: string; title: string; sub: string; tone: CoverTone; glyph: FoodCategoryId; to: string };
+/**
+ * Banners promocionais do carrossel da home (fictícios). `to`: "cupons" abre a tela de cupons; "lojas" desce para a lista; senão é o id de uma loja.
+ * `photo`: categoria cuja foto aparece no banner. `theme`: paleta (azul elétrico da Orbi com um acento por banner). `badge`: selo redondo (linha grande + linha pequena).
+ */
+export type FoodBannerTheme = "blue" | "coral" | "violet" | "night";
+export type FoodBanner = { id: string; title: string; sub: string; cta: string; theme: FoodBannerTheme; photo: FoodCategoryId; photoVariant: 0 | 1; badge: [string, string]; to: string };
 export const FOOD_BANNERS: FoodBanner[] = [
-  { id: "b-frete", title: "Frete grátis na 1ª compra", sub: "Use o cupom PRIMEIRA", tone: 3, glyph: "lanches", to: "cupons" },
-  { id: "b-pizza", title: "Pizza com 20% OFF", sub: "Hoje, em pizzarias participantes", tone: 2, glyph: "pizza", to: "cupons" },
-  { id: "b-acai", title: "Açaí para refrescar", sub: "R$ 10 OFF acima de R$ 40", tone: 1, glyph: "acai", to: "cupons" },
-  { id: "b-noite", title: "Frete grátis à noite", sub: "Das 19h às 22h, com o cupom NOITE", tone: 0, glyph: "espetinho", to: "cupons" },
+  { id: "b-frete", title: "Frete grátis na 1ª compra", sub: "Use o cupom PRIMEIRA", cta: "Pegar cupom", theme: "blue", photo: "lanches", photoVariant: 0, badge: ["R$ 0", "frete"], to: "cupons" },
+  { id: "b-pizza", title: "Pizza com 20% off hoje", sub: "Nas pizzarias participantes", cta: "Ver lojas", theme: "coral", photo: "pizza", photoVariant: 1, badge: ["20%", "OFF"], to: "forno-da-serra" },
+  { id: "b-acai", title: "Açaí em dobro às quartas", sub: "Lojas de açaí participantes", cta: "Ver lojas", theme: "violet", photo: "acai", photoVariant: 0, badge: ["2x", "quarta"], to: "acai-pe-vermelho" },
+  { id: "b-noite", title: "Frete grátis à noite", sub: "Das 19h às 22h", cta: "Pegar cupom", theme: "night", photo: "espetinho", photoVariant: 0, badge: ["R$ 0", "frete"], to: "cupons" },
 ];
 
 export const storeById = (id: string) => FOOD_STORES.find((s) => s.id === id);

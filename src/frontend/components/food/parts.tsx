@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { IconGlyph, type GlyphName } from "@/frontend/components/IconGlyph";
+import { asset } from "@/frontend/lib/site-mode";
 import { FOOD_DEMO_BANNER } from "@/shared/food/flag";
-import type { FoodCategoryId, FoodStore } from "@/shared/food/types";
+import { storePhoto } from "@/shared/food/photos";
+import type { FoodStore } from "@/shared/food/types";
 
-/** Faixa que aparece em TODAS as telas do Food. Não é servidor nem cliente: sem estado. */
+/** Faixa de demonstração do painel da loja (/loja), do /admin/food e da página de logos. A aba do passageiro não a mostra. Sem estado. */
 export function DemoBanner({ children }: { children?: React.ReactNode }) {
   return (
     <div role="note" data-testid="food-demo-banner" className="mb-4 rounded-2xl bg-[color-mix(in_srgb,var(--warn)_13%,transparent)] px-4 py-2.5 text-sm text-warn">
@@ -13,27 +14,15 @@ export function DemoBanner({ children }: { children?: React.ReactNode }) {
   );
 }
 
-export const CATEGORY_GLYPH: Record<FoodCategoryId, GlyphName> = {
-  pizza: "pizza", lanches: "burger", marmita: "bowl", acai: "cup", japones: "sushi", padaria: "bread", espetinho: "skewer",
-};
-
 /**
- * Capa ilustrada da loja, sem foto: blocos de cor da paleta da Orbi (azul tonal, noturno, elétrico, degradê)
- * com círculos suaves e o ícone de traço da categoria. `compact` é o quadradinho da lista.
+ * Capa da loja: foto genérica da categoria (public/food, créditos em /creditos). Decorativa (o nome da loja está ao lado).
+ * `compact` é o quadradinho das listas. Enquanto a imagem carrega, o fundo tonal evita um salto de layout.
  */
-export function FoodArt({ store, compact = false, className = "" }: { store: Pick<FoodStore, "tone" | "category">; compact?: boolean; className?: string }) {
-  const T = [
-    { bg: "var(--tint)", dot: "color-mix(in srgb, var(--primary) 16%, transparent)", tone: "brand" as const },
-    { bg: "var(--accent)", dot: "rgb(0 225 255 / .2)", tone: "glass" as const },
-    { bg: "var(--primary)", dot: "rgb(255 255 255 / .16)", tone: "glass" as const },
-    { bg: "var(--grad)", dot: "rgb(255 255 255 / .18)", tone: "glass" as const },
-  ][store.tone];
-  const g = CATEGORY_GLYPH[store.category];
+export function FoodArt({ store, compact = false, className = "" }: { store: Pick<FoodStore, "id" | "category">; compact?: boolean; className?: string }) {
   return (
-    <div aria-hidden="true" className={`relative grid shrink-0 place-items-center overflow-hidden ${className}`} style={{ background: T.bg }}>
-      <span className="absolute rounded-full" style={{ background: T.dot, width: compact ? "70%" : "34%", aspectRatio: "1", left: compact ? "-18%" : "-6%", top: compact ? "-22%" : "-30%" }} />
-      <span className="absolute rounded-full" style={{ background: T.dot, width: compact ? "46%" : "22%", aspectRatio: "1", right: compact ? "-10%" : "8%", bottom: compact ? "-12%" : "-22%" }} />
-      <IconGlyph name={g} size={compact ? 34 : 64} bare tone={T.tone} />
+    <div aria-hidden="true" className={`relative shrink-0 overflow-hidden bg-tint ${className}`}>
+      {/* eslint-disable-next-line @next/next/no-img-element -- arquivo local já em WebP no tamanho certo */}
+      <img src={asset(storePhoto(store))} alt="" loading={compact ? "lazy" : "eager"} decoding="async" draggable={false} className="absolute inset-0 size-full object-cover" />
     </div>
   );
 }
