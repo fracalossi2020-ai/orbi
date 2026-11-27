@@ -91,7 +91,7 @@ export const FOOD_STORES: FoodStore[] = [
   },
   {
     id: "brasa-e-pao", name: "Brasa & Pão Hamburgueria", city: "ipatinga", category: "lanches", blurb: "Hambúrguer artesanal na brasa, pão de batata.",
-    etaMin: 25, etaMax: 40, deliveryFeeCents: c(5), minOrderCents: c(25), turns: [{ open: "10:00", close: "23:59" }], tone: 1, today: { orders: 38, ticketCents: c(41) },
+    etaMin: 25, etaMax: 40, deliveryFeeCents: 0, minOrderCents: c(25), turns: [{ open: "10:00", close: "23:59" }], tone: 1, today: { orders: 38, ticketCents: c(41) },
     menu: [
       item("classico", "Hambúrgueres", "Clássico", 26, "Blend 160 g, queijo prato, alface e tomate.", [ponto, adic]),
       item("cheddar", "Hambúrgueres", "Cheddar bacon", 32, "Blend 160 g, cheddar cremoso e bacon crocante.", [ponto, adic]),
@@ -183,7 +183,7 @@ export const FOOD_STORES: FoodStore[] = [
   // ---- Lojas fictícias extras: cada cidade fica com pelo menos cinco, para a aba nunca ficar vazia.
   {
     id: "tropical-acai", name: "Tropical Açaí & Cia", city: "ipatinga", category: "acai", blurb: "Açaí cremoso, copos grandes e muita fruta.",
-    etaMin: 20, etaMax: 35, deliveryFeeCents: c(4.5), minOrderCents: c(15), turns: [{ open: "11:00", close: "23:00" }], tone: 3, today: { orders: 33, ticketCents: c(25) },
+    etaMin: 20, etaMax: 35, deliveryFeeCents: 0, minOrderCents: c(15), turns: [{ open: "11:00", close: "23:00" }], tone: 3, today: { orders: 33, ticketCents: c(25) },
     menu: [
       item("a300", "Açaí no copo", "Açaí 300 ml", 15, "Monte do seu jeito.", [frutas, compl, cobert, turbine]),
       item("a500", "Açaí no copo", "Açaí 500 ml", 21, "O mais pedido da casa.", [frutas, compl, cobert, turbine]),
@@ -255,7 +255,7 @@ export const FOOD_STORES: FoodStore[] = [
   },
   {
     id: "lanchonete-da-praca", name: "Lanchonete da Praça", city: "timoteo", category: "lanches", blurb: "O x-tudo da praça, do jeito que você gosta.",
-    etaMin: 20, etaMax: 35, deliveryFeeCents: c(4), minOrderCents: c(18), turns: [{ open: "16:00", close: "23:30" }], tone: 1, today: { orders: 32, ticketCents: c(34) },
+    etaMin: 20, etaMax: 35, deliveryFeeCents: 0, minOrderCents: c(18), turns: [{ open: "16:00", close: "23:30" }], tone: 1, today: { orders: 32, ticketCents: c(34) },
     menu: [
       item("xburger", "Lanches", "X-burger", 18, "Hambúrguer, queijo, alface e tomate.", [adic]),
       item("xbacon", "Lanches", "X-bacon", 22, "Hambúrguer, queijo e bacon.", [adic]),
@@ -288,8 +288,8 @@ export const ratingOf = (s: Pick<FoodStore, "id">) => RATINGS[s.id] ?? 4.5;
 
 /** Selo de desconto fictício de algumas lojas (destaques). */
 const PROMOS: Record<string, string> = {
-  "forno-da-serra": "20% OFF", "brasa-e-pao": "Frete grátis", "acai-pe-vermelho": "15% OFF", "sushi-vale-sakura": "10% OFF", "cantinho-mineiro": "Sobremesa grátis",
-  "tropical-acai": "Frete grátis", "pizza-do-vale": "25% OFF", "pao-de-ouro": "10% OFF", "lanchonete-da-praca": "Frete grátis", "pizzaria-aco-quente": "20% OFF",
+  "forno-da-serra": "20% OFF", "acai-pe-vermelho": "15% OFF", "sushi-vale-sakura": "10% OFF", "cantinho-mineiro": "Sobremesa grátis",
+  "pizza-do-vale": "25% OFF", "pao-de-ouro": "10% OFF", "pizzaria-aco-quente": "20% OFF",
 };
 export const promoOf = (s: Pick<FoodStore, "id">): string | null => PROMOS[s.id] ?? null;
 

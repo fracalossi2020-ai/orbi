@@ -142,7 +142,7 @@ export function CheckoutView({ storeId }: { storeId: string }) {
         {lines.map((l) => <p key={l.key} className="flex justify-between gap-3 text-sm"><span>{l.qty}x {l.name}</span><span>{brl(lineTotalCents(l))}</span></p>)}
         <div className="space-y-1 border-t border-line pt-2 text-sm">
           <p className="flex justify-between"><span className="text-muted">Subtotal</span><span>{brl(quote.subtotalCents)}</span></p>
-          <p className="flex justify-between"><span className="text-muted">Entrega</span><span>{f === "delivery" ? brl(quote.deliveryFeeCents) : "Grátis"}</span></p>
+          <p className="flex justify-between"><span className="text-muted">Entrega</span><span>{f === "delivery" && quote.deliveryFeeCents > 0 ? brl(quote.deliveryFeeCents) : "Grátis"}</span></p>
           <p className="flex justify-between text-base font-bold"><span>Total</span><span data-testid="food-total">{brl(quote.totalCents)}</span></p>
         </div>
       </section>
